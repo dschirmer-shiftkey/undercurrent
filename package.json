@@ -21,6 +21,10 @@
     "./transports": {
       "types": "./dist/transports/index.d.ts",
       "import": "./dist/transports/index.js"
+    },
+    "./komatik": {
+      "types": "./dist/komatik/index.d.ts",
+      "import": "./dist/komatik/index.js"
     }
   },
   "scripts": {

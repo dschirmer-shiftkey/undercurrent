@@ -581,3 +581,71 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 
 <!-- Add project-specific Claude Code instructions below this line -->
 <!-- These sections are preserved across re-distributions -->
+
+### Undercurrent — Developer Context
+
+**What this is**: An invisible prompt enrichment SDK (`@komatik/undercurrent`) — 4-stage pipeline that transforms vague human messages into structured, context-rich prompts before the AI sees them.
+
+**Stack**: TypeScript 5.7+, ESM-only, Node 20+, zero runtime dependencies. Dev deps: vitest, typescript, @types/node.
+
+**Build & test**:
+```bash
+npm run build      # tsc → dist/
+npm run typecheck   # tsc --noEmit
+npm test            # vitest run — 49 tests in 7 files
+```
+
+**Source layout**:
+```
+src/
+├── types.ts                 # THE protocol — read first before any work
+├── index.ts                 # Public API (Undercurrent class + re-exports)
+├── engine/pipeline.ts       # 4-stage pipeline: classify → harvest → analyze → compose
+├── adapters/                # Pluggable context sources
+│   ├── conversation.ts      # Chat history (decisions, topics, terminology)
+│   ├── git.ts               # Branch, commits, diff, working tree
+│   └── filesystem.ts        # Project structure, recent files, relevant content
+├── komatik/                 # Komatik ecosystem identity layer (@komatik/undercurrent/komatik)
+│   ├── client.ts            # KomatikDataClient interface (Supabase-compatible, zero deps)
+│   ├── types.ts             # Row types for all Supabase tables from PR #800
+│   ├── identity-adapter.ts  # komatik_profiles → who is this user
+│   ├── history-adapter.ts   # user_product_events + crm_activities → behavioral history
+│   ├── project-adapter.ts   # triage_intakes + floe_scans → active projects
+│   ├── marketplace-adapter.ts # forge_usage + forge_tools → marketplace activity
+│   └── testing.ts           # createMockClient() for tests
+├── strategies/              # Pluggable enrichment logic
+│   ├── default.ts           # Heuristic (no LLM, deterministic) — reference impl
+│   └── komatik-pipeline.ts  # Domain-specific (Komatik marketplace enrichment)
+└── transports/
+    └── middleware.ts         # Express middleware + Fetch API handler
+```
+
+**Key conventions**:
+- All imports use `.js` extension (`import { Foo } from "./foo.js"`)
+- Type-only imports use `import type`
+- Node built-ins use `node:` prefix
+- No `any`, no `@ts-ignore` — use `unknown` and narrow
+- Unused params prefixed with `_`
+- Barrel exports in each directory's `index.ts`
+- Tests colocated: `pipeline.ts` → `pipeline.test.ts`
+
+**Komatik identity layer** (`src/komatik/`):
+- 4 adapters query Supabase tables from Komatik PR #800 ecosystem architecture
+- `KomatikDataClient` interface — accepts any Supabase client, zero deps
+- `EnrichInput.enrichmentContext` — optional per-message metadata (source app, session ID)
+- Import from `@komatik/undercurrent/komatik`
+- Mock client for tests: `createMockClient()` from `src/komatik/testing.ts`
+
+**Critical invariants**:
+- Zero external runtime dependencies — only `node:*` built-ins
+- DefaultStrategy is fully deterministic — same input = same output, no network, no randomness
+- Pipeline never crashes on adapter failure — graceful degradation via Promise.allSettled
+- High-specificity + atomic-scope messages pass through unchanged (zero enrichment overhead)
+- Max 2 clarifications surface to the user; everything else is assumed and transparently stated
+
+**Design principles** (violating any of these is a bug):
+1. Invisible by default — user never sees the enrichment
+2. 3-Second Rule — any clarification answerable in < 3 seconds
+3. Bias toward action — assume and state, don't interrogate
+4. Proportional enrichment — simple = passthrough, complex = deep
+5. Container, not contents — pipeline + plugin system, not business logic

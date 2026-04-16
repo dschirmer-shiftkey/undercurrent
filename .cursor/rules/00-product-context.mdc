@@ -37,6 +37,14 @@ src/
 ├── engine/
 │   ├── pipeline.ts    4-stage pipeline (classify → harvest → analyze → compose)
 │   └── pipeline.test.ts
+├── komatik/           Komatik identity layer (@komatik/undercurrent/komatik)
+│   ├── client.ts      KomatikDataClient interface (Supabase-compatible)
+│   ├── types.ts       Row types for ecosystem Supabase tables
+│   ├── identity-adapter.ts   komatik_profiles → user identity
+│   ├── history-adapter.ts    user_product_events + crm → behavior
+│   ├── project-adapter.ts    triage_intakes + floe_scans → projects
+│   ├── marketplace-adapter.ts forge_usage + forge_tools → marketplace
+│   └── testing.ts     Mock client for tests
 ├── strategies/
 │   ├── default.ts     Heuristic strategy (no LLM, deterministic)
 │   ├── default.test.ts
@@ -49,8 +57,27 @@ src/
     └── middleware.ts    Express middleware + Fetch handler
 ```
 
+## Strategies
+
+Two strategies ship with the SDK:
+- **DefaultStrategy** (`strategies/default.ts`) — heuristic, no LLM, deterministic. This is the reference implementation and the one used in tests.
+- **KomatikPipelineStrategy** (`strategies/komatik-pipeline.ts`) — domain-specific strategy for the Komatik marketplace pipeline. Detects project domains (ecommerce, SaaS, education, etc.), infers tech stacks, identifies features, and assesses readiness. Supports optional LLM-assisted composition via `llmCall` callback. Has a Yggdrasil (charitable open-source seedling) mode.
+
+## Komatik Identity Layer
+
+Four adapters in `src/komatik/` make Undercurrent identity-aware via the Komatik ID (Supabase user UUID). Import from `@komatik/undercurrent/komatik`.
+
+- **KomatikIdentityAdapter** (priority 0) — queries `komatik_profiles`. Who is this user, their role, products used.
+- **KomatikHistoryAdapter** (priority 1) — queries `user_product_events` + `crm_activities`. Behavioral trajectory, lead score.
+- **KomatikProjectAdapter** (priority 2) — queries `triage_intakes` + `floe_scans`. Active projects, diagnostics, scan findings.
+- **KomatikMarketplaceAdapter** (priority 3) — queries `forge_usage` + `forge_tools`. MCP tool usage, authored tools.
+
+All accept `{ client: KomatikDataClient, userId: string }`. The `KomatikDataClient` interface matches Supabase's query builder — zero new dependencies.
+
+`EnrichInput` and `AdapterInput` now accept optional `enrichmentContext?: Record<string, unknown>` for per-message metadata (source app, session ID).
+
 ## Verification
 
 - `npm run build` — TypeScript compiles without errors
 - `npm run typecheck` — type-check only (no emit)
-- `npm test` — 31 tests passing
+- `npm test` — 49 tests passing (7 test files: pipeline, default strategy, 4 Komatik adapters, integration)

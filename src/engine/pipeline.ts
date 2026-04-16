@@ -20,6 +20,7 @@ type EnrichmentDepth = EnrichmentMetadata["enrichmentDepth"];
 export interface EnrichInput {
   message: string;
   conversation?: ConversationTurn[];
+  enrichmentContext?: Record<string, unknown>;
 }
 
 export class Pipeline {
@@ -75,6 +76,7 @@ export class Pipeline {
       intent,
       conversation,
       adapterTimings,
+      input.enrichmentContext,
     );
     this.hooks.afterGather?.(context);
     this.log("context layers", context.length);
@@ -174,6 +176,7 @@ export class Pipeline {
     intent: IntentSignal,
     conversation: ConversationTurn[],
     timings: Record<string, number>,
+    enrichmentContext?: Record<string, unknown>,
   ): Promise<ContextLayer[]> {
     const available = await Promise.all(
       this.adapters.map(async (adapter) => {
@@ -196,6 +199,7 @@ export class Pipeline {
       intent,
       conversation,
       existingContext: [] as ContextLayer[],
+      enrichmentContext,
     };
 
     const results = await Promise.allSettled(

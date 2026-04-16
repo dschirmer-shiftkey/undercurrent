@@ -1,0 +1,59 @@
+---
+description: TypeScript conventions for Undercurrent SDK
+globs: "**/*.ts"
+alwaysApply: false
+---
+
+# TypeScript Conventions
+
+## Module System
+
+- **ESM only** — `"type": "module"` in package.json
+- All relative imports use `.js` extension: `import { Foo } from "./foo.js"`
+- Barrel exports in each directory's `index.ts` — re-export public API, nothing else
+
+## Strict Mode
+
+tsconfig has strict + extra strictness enabled:
+- `strict: true`, `noUncheckedIndexedAccess: true`
+- `noUnusedLocals: true`, `noUnusedParameters: true`
+- Prefix unused params with `_` (e.g., `_input`, `_context`)
+- Never use `any` — use `unknown` and narrow, or `Record<string, unknown>`
+- Never use `@ts-ignore` or `as unknown as` — fix the type instead
+
+## Import Style
+
+```typescript
+// Node built-ins — "node:" prefix required
+import { randomUUID } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
+
+// Type-only imports use `import type`
+import type { ContextAdapter, ContextLayer } from "../types.js";
+```
+
+## Zero External Dependencies
+
+The core SDK has zero runtime dependencies (only `node:*` built-ins). `devDependencies` only: `typescript`, `vitest`, `@types/node`. New features must not add runtime deps unless explicitly approved.
+
+## Naming
+
+- Interfaces: `PascalCase` (e.g., `IntentSignal`, `ContextLayer`)
+- Types/enums: `PascalCase` (e.g., `Action`, `Scope`)
+- Classes: `PascalCase` (e.g., `DefaultStrategy`, `Pipeline`)
+- Functions: `camelCase`
+- Private methods: `camelCase`, no `#` prefix — use `private` keyword
+- File names: `kebab-case.ts` (e.g., `komatik-pipeline.ts`)
+
+## Error Handling
+
+- Adapters fail silently — pipeline continues if one adapter throws
+- Use `Promise.allSettled` for parallel adapter calls
+- Timeout via `Promise.race` — no external timeout libraries
+- Catch blocks use empty `catch` or `catch (err)` — never `catch (e: any)`
+
+## Build & Check
+
+- `npm run build` — TypeScript compile to `dist/`
+- `npm run typecheck` — type-check without emit
+- `npm test` — vitest run (31 tests)
