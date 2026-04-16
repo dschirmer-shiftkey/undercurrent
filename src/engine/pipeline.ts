@@ -10,6 +10,7 @@ import type {
   GapResolution,
   IntentSignal,
   PipelineHooks,
+  TargetPlatform,
   UndercurrentConfig,
 } from "../types.js";
 
@@ -21,6 +22,7 @@ export interface EnrichInput {
   message: string;
   conversation?: ConversationTurn[];
   enrichmentContext?: Record<string, unknown>;
+  targetPlatform?: TargetPlatform;
 }
 
 export class Pipeline {
@@ -29,6 +31,7 @@ export class Pipeline {
   private readonly maxClarifications: number;
   private readonly confidenceThreshold: number;
   private readonly timeoutMs: number;
+  private readonly defaultPlatform: TargetPlatform;
   private readonly debug: boolean;
   private readonly onEnrichment?: (result: EnrichedPrompt) => void;
   private hooks: PipelineHooks = {};
@@ -41,6 +44,7 @@ export class Pipeline {
     this.maxClarifications = config.maxClarifications ?? 2;
     this.confidenceThreshold = config.assumptionConfidenceThreshold ?? 0.6;
     this.timeoutMs = config.timeoutMs ?? 10_000;
+    this.defaultPlatform = config.targetPlatform ?? "generic";
     this.debug = config.debug ?? false;
     this.onEnrichment = config.onEnrichment;
   }
@@ -53,6 +57,7 @@ export class Pipeline {
     const start = performance.now();
     const conversation = input.conversation ?? [];
     const adapterTimings: Record<string, number> = {};
+    const platform = input.targetPlatform ?? this.defaultPlatform;
 
     // ── Stage 1: Intent Classification ───────────────────────────────────
     this.hooks.beforeClassify?.(input.message);
@@ -66,7 +71,7 @@ export class Pipeline {
     const depth = this.determineDepth(intent);
 
     if (depth === "none") {
-      return this.passthrough(input.message, intent, start);
+      return this.passthrough(input.message, intent, start, platform);
     }
 
     // ── Stage 2: Context Harvesting ──────────────────────────────────────
@@ -127,6 +132,7 @@ export class Pipeline {
         processingTimeMs: performance.now() - start,
         adapterTimings,
         strategyUsed: this.strategy.name,
+        targetPlatform: platform,
       },
     };
 
@@ -135,16 +141,61 @@ export class Pipeline {
     return result;
   }
 
+  /**
+   * Graduated scope calibration. Instead of a binary passthrough decision,
+   * computes a depth score from multiple signals and maps it to a spectrum:
+   *
+   *   Score <= 1  → none (passthrough, zero enrichment overhead)
+   *   Score 2-3   → light (identity + preferences only, skip gap analysis)
+   *   Score 4-6   → standard (full pipeline with harvesting + gaps)
+   *   Score >= 7   → deep (all adapters, proactive context loading)
+   *
+   * Signals: specificity, scope, action complexity, emotional load,
+   * conversation length, and whether enrichment context hints are present.
+   */
   private determineDepth(intent: IntentSignal): EnrichmentDepth {
-    if (intent.specificity === "high" && intent.scope === "atomic") {
-      return "none";
+    let score = 0;
+
+    const specificityScores: Record<string, number> = {
+      high: 0,
+      medium: 3,
+      low: 5,
+    };
+    score += specificityScores[intent.specificity] ?? 3;
+
+    const scopeScores: Record<string, number> = {
+      atomic: 0,
+      local: 1,
+      product: 2,
+      "cross-system": 3,
+      meta: 2,
+      unknown: 3,
+    };
+    score += scopeScores[intent.scope] ?? 2;
+
+    const actionComplexity: Record<string, number> = {
+      build: 2,
+      design: 2,
+      fix: 1,
+      decide: 2,
+      explore: 0,
+      discuss: 1,
+      vent: 0,
+      unknown: 1,
+    };
+    score += actionComplexity[intent.action] ?? 1;
+
+    if (intent.emotionalLoad === "frustrated" || intent.emotionalLoad === "uncertain") {
+      score += 1;
     }
-    if (intent.specificity === "high") {
-      return "light";
+
+    if (intent.confidence < 0.5) {
+      score += 1;
     }
-    if (intent.specificity === "medium") {
-      return "standard";
-    }
+
+    if (score <= 1) return "none";
+    if (score <= 3) return "light";
+    if (score <= 6) return "standard";
     return "deep";
   }
 
@@ -152,6 +203,7 @@ export class Pipeline {
     message: string,
     intent: IntentSignal,
     startTime: number,
+    platform: TargetPlatform,
   ): EnrichedPrompt {
     return {
       originalMessage: message,
@@ -167,6 +219,7 @@ export class Pipeline {
         processingTimeMs: performance.now() - startTime,
         adapterTimings: {},
         strategyUsed: this.strategy.name,
+        targetPlatform: platform,
       },
     };
   }

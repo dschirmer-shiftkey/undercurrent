@@ -592,7 +592,7 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 ```bash
 npm run build      # tsc → dist/
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run — 78 tests in 9 files
+npm test            # vitest run — 108 tests in 14 files
 npm run start:mcp   # Run the MCP server (requires env vars)
 ```
 
@@ -608,19 +608,23 @@ src/
 │   └── filesystem.ts        # Project structure, recent files, relevant content
 ├── komatik/                 # Komatik ecosystem identity layer (@komatik/undercurrent/komatik)
 │   ├── client.ts            # KomatikDataClient interface (Supabase-compatible, zero deps)
-│   ├── types.ts             # Row types for all Supabase tables from PR #800
+│   ├── types.ts             # Row types for all Supabase tables (PR #800 + internal track)
 │   ├── identity-adapter.ts  # komatik_profiles → who is this user
+│   ├── preference-adapter.ts # user_preferences → tone, style, code conventions, always-assume rules
+│   ├── memory-adapter.ts    # session_memories → cross-session decisions, active work, unresolved items
 │   ├── history-adapter.ts   # user_product_events + crm_activities → behavioral history
+│   ├── outcome-adapter.ts   # enrichment_outcomes → acceptance/rejection feedback loop
 │   ├── project-adapter.ts   # triage_intakes + floe_scans → active projects
 │   ├── marketplace-adapter.ts # forge_usage + forge_tools → marketplace activity
 │   └── testing.ts           # createMockClient() for tests
 ├── mcp/                     # External MCP server (@komatik/undercurrent/mcp)
 │   ├── postgrest-client.ts  # Lightweight PostgREST adapter (native fetch, no Supabase SDK)
-│   ├── server.ts            # McpServer: 2 tools, 4 resources, 1 prompt
+│   ├── server.ts            # McpServer: 2 tools, 7 resources, 1 prompt
 │   └── index.ts             # Bin entry (undercurrent-mcp) — reads env vars, stdio transport
 ├── strategies/              # Pluggable enrichment logic
 │   ├── default.ts           # Heuristic (no LLM, deterministic) — reference impl
-│   └── komatik-pipeline.ts  # Domain-specific (Komatik marketplace enrichment)
+│   ├── komatik-pipeline.ts  # Domain-specific (Komatik marketplace enrichment)
+│   └── platform-composer.ts # Platform-aware output formatting (Cursor, Claude, ChatGPT, API, MCP)
 └── transports/
     └── middleware.ts         # Express middleware + Fetch API handler
 ```
@@ -635,20 +639,41 @@ src/
 - Tests colocated: `pipeline.ts` → `pipeline.test.ts`
 
 **Komatik identity layer** (`src/komatik/`):
-- 4 adapters query Supabase tables from Komatik PR #800 ecosystem architecture
+- 7 adapters query Supabase tables from Komatik ecosystem architecture
 - `KomatikDataClient` interface — accepts any Supabase client, zero deps
 - `EnrichInput.enrichmentContext` — optional per-message metadata (source app, session ID)
 - Import from `@komatik/undercurrent/komatik`
 - Mock client for tests: `createMockClient()` from `src/komatik/testing.ts`
+- New internal track adapters (3 new tables):
+  - `KomatikPreferenceAdapter` → `user_preferences` — tone, style, code conventions, always/never assume rules
+  - `KomatikOutcomeAdapter` → `enrichment_outcomes` — tracks acceptance/rejection/revision of past enrichments
+  - `KomatikMemoryAdapter` → `session_memories` — cross-session persistent context (decisions, active work, unresolved items)
 
 **External MCP server** (`src/mcp/`):
 - Exposes Undercurrent to Cursor, Claude, AntiGravity via stdio MCP transport
-- Tools: `enrich` (full pipeline), `get_context` (raw context layers)
-- Resources: `komatik://user/profile`, `komatik://user/history`, `komatik://user/projects`, `komatik://user/tools`
-- Prompts: `enrich-message` (system prompt pre-loaded with user context)
+- Tools: `enrich` (full pipeline, accepts `platform` param), `get_context` (raw context layers)
+- Resources (7): `komatik://user/profile`, `komatik://user/preferences`, `komatik://user/memory`, `komatik://user/history`, `komatik://user/outcomes`, `komatik://user/projects`, `komatik://user/tools`
+- Prompts: `enrich-message` (system prompt pre-loaded with full user context from all 7 adapters)
 - `PostgREST client` — lightweight `KomatikDataClient` using native `fetch`, no `@supabase/supabase-js`
 - Env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATIK_USER_ID`
 - Import from `@komatik/undercurrent/mcp`; bin: `undercurrent-mcp`
+
+**Platform-aware composition** (`src/strategies/platform-composer.ts`):
+- Formats enriched output differently per target platform via `TargetPlatform` type
+- `cursor` — XML-tagged blocks (`<user_request>`, `<context>`, `<assumptions>`)
+- `claude` — Semantic XML with user profile grouping, memory, learning blocks
+- `chatgpt` — Markdown-formatted with bold headers and bullet lists
+- `api` — Structured JSON with full data payloads
+- `mcp` — Compact text with separator for MCP tool responses
+- `generic` — Labeled text blocks (backward-compatible default format)
+- Per-request override via `EnrichInput.targetPlatform` or config default
+
+**Graduated scope calibration** (`pipeline.determineDepth`):
+- Replaced binary passthrough with multi-signal scoring system
+- Signals: specificity, scope, action complexity, emotional load, confidence
+- Score → depth mapping: ≤1 none, 2-3 light, 4-6 standard, ≥7 deep
+- Frustrated/uncertain users get escalated depth automatically
+- Low-confidence classifications trigger deeper enrichment
 
 **Critical invariants**:
 - Zero external runtime dependencies in core — only `node:*` built-ins (`src/mcp/` has `@modelcontextprotocol/sdk` + `zod`)
@@ -656,6 +681,7 @@ src/
 - Pipeline never crashes on adapter failure — graceful degradation via Promise.allSettled
 - High-specificity + atomic-scope messages pass through unchanged (zero enrichment overhead)
 - Max 2 clarifications surface to the user; everything else is assumed and transparently stated
+- Expired session memories are automatically filtered out at query time
 
 **Design principles** (violating any of these is a bug):
 1. Invisible by default — user never sees the enrichment
@@ -663,3 +689,4 @@ src/
 3. Bias toward action — assume and state, don't interrogate
 4. Proportional enrichment — simple = passthrough, complex = deep
 5. Container, not contents — pipeline + plugin system, not business logic
+6. The user travels with their context — preferences, memory, and outcomes persist across platforms and sessions

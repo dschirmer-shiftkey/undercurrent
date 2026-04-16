@@ -129,7 +129,20 @@ export interface EnrichmentMetadata {
   processingTimeMs: number;
   adapterTimings: Record<string, number>;
   strategyUsed: string;
+  targetPlatform: TargetPlatform;
 }
+
+// ─── Platform Targeting ─────────────────────────────────────────────────────
+// Undercurrent tailors its enriched output to the target platform. Each
+// platform consumes context differently and benefits from different formats.
+
+export type TargetPlatform =
+  | "cursor"
+  | "claude"
+  | "chatgpt"
+  | "api"
+  | "mcp"
+  | "generic";
 
 // ─── Pipeline Configuration ─────────────────────────────────────────────────
 
@@ -139,6 +152,7 @@ export interface UndercurrentConfig {
   maxClarifications?: number;
   assumptionConfidenceThreshold?: number;
   timeoutMs?: number;
+  targetPlatform?: TargetPlatform;
   onEnrichment?: (result: EnrichedPrompt) => void;
   debug?: boolean;
 }
