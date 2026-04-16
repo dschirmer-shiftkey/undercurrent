@@ -86,6 +86,38 @@ new KomatikIdentityAdapter({ client: supabase, userId: user.id })
 
 Adapters: Identity (komatik_profiles), History (user_product_events + crm), Projects (triage + floe), Marketplace (forge). Row types in `src/komatik/types.ts`. Mock client for tests: `createMockClient()` from `src/komatik/testing.ts`.
 
+## External MCP Server
+
+The MCP server (`src/mcp/`) exposes Undercurrent to external AI tools via the stdio transport. It reuses the existing Komatik adapters and DefaultStrategy.
+
+### Architecture
+
+```
+External Tool (Cursor/Claude) ←→ stdin/stdout JSON-RPC ←→ McpServer ←→ Undercurrent Pipeline
+                                                                        ├── 4 Komatik Adapters
+                                                                        └── PostgREST Client → Supabase
+```
+
+### Key files
+
+- `src/mcp/postgrest-client.ts` — Lightweight `KomatikDataClient` using native `fetch` against Supabase PostgREST API. No `@supabase/supabase-js`.
+- `src/mcp/server.ts` — `createUndercurrentMcpServer(config)` registers tools, resources, prompts. Import from `@komatik/undercurrent/mcp`.
+- `src/mcp/index.ts` — Bin entry point (`undercurrent-mcp`). Reads env vars, connects `StdioServerTransport`.
+
+### MCP surface
+
+**Tools**: `enrich` (full 4-stage pipeline + Komatik context), `get_context` (raw context layers from all adapters)
+**Resources**: `komatik://user/profile`, `komatik://user/history`, `komatik://user/projects`, `komatik://user/tools`
+**Prompts**: `enrich-message` (system prompt pre-loaded with user context)
+
+### Configuration
+
+Env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATIK_USER_ID`
+
+### Dependency boundary
+
+`@modelcontextprotocol/sdk` and `zod` are only imported by `src/mcp/` code. The core pipeline (`src/engine/`, `src/komatik/`, `src/strategies/`, `src/adapters/`) has zero external runtime dependencies.
+
 ## Proportional Enrichment
 
 The pipeline auto-calibrates depth based on intent:

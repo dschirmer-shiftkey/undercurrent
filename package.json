@@ -25,14 +25,22 @@
     "./komatik": {
       "types": "./dist/komatik/index.d.ts",
       "import": "./dist/komatik/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
     }
+  },
+  "bin": {
+    "undercurrent-mcp": "./dist/mcp/index.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "start:mcp": "node dist/mcp/index.js"
   },
   "keywords": [
     "ai",
@@ -52,5 +60,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
   }
 }
