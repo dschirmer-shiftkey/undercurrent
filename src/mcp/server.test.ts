@@ -206,16 +206,19 @@ describe("get_context tool", () => {
 });
 
 describe("resources", () => {
-  it("registers 4 resources", () => {
+  it("registers 7 resources", () => {
     const server = createUndercurrentMcpServer(buildMockConfig());
     const resources = getInternals(server)._registeredResources;
 
     const keys = Object.keys(resources);
-    expect(keys.length).toBe(4);
+    expect(keys.length).toBe(7);
     expect(resources["komatik://user/profile"]).toBeDefined();
     expect(resources["komatik://user/history"]).toBeDefined();
     expect(resources["komatik://user/projects"]).toBeDefined();
     expect(resources["komatik://user/tools"]).toBeDefined();
+    expect(resources["komatik://user/preferences"]).toBeDefined();
+    expect(resources["komatik://user/memory"]).toBeDefined();
+    expect(resources["komatik://user/outcomes"]).toBeDefined();
   });
 
   it("profile resource returns user identity", async () => {

@@ -66,5 +66,6 @@ export type {
   PipelineHooks,
   Scope,
   Specificity,
+  TargetPlatform,
   UndercurrentConfig,
 } from "./types.js";

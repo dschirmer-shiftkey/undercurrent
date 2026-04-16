@@ -312,12 +312,99 @@ export interface ModelAvailability {
   metadata: Record<string, unknown>;
 }
 
+// ─── user_preferences (new table for Undercurrent internal track) ────────────
+
+export type PreferenceTone =
+  | "formal"
+  | "casual"
+  | "terse"
+  | "friendly";
+
+export type PreferenceExplanationDepth =
+  | "minimal"
+  | "standard"
+  | "deep";
+
+export type PreferenceResponseFormat =
+  | "code-first"
+  | "plan-first"
+  | "explanation-first"
+  | "mixed";
+
+export interface CodeStylePreferences {
+  language: string | null;
+  framework: string | null;
+  paradigm: string | null;
+  indent: string | null;
+  other: string[];
+}
+
+export interface UserPreferences {
+  id: string;
+  user_id: string;
+  tone: PreferenceTone | null;
+  explanation_depth: PreferenceExplanationDepth | null;
+  response_format: PreferenceResponseFormat | null;
+  code_style: CodeStylePreferences;
+  always_assume: string[];
+  never_assume: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+// ─── enrichment_outcomes (new table for outcome learning) ────────────────────
+
+export type OutcomeVerdict =
+  | "accepted"
+  | "rejected"
+  | "revised"
+  | "ignored";
+
+export interface EnrichmentOutcome {
+  id: string;
+  user_id: string;
+  enrichment_id: string;
+  original_message: string;
+  enriched_message: string;
+  strategy_used: string;
+  enrichment_depth: string;
+  verdict: OutcomeVerdict;
+  assumptions_accepted: string[];
+  assumptions_corrected: string[];
+  correction_details: Record<string, unknown>;
+  platform: string | null;
+  session_id: string | null;
+  created_at: string;
+}
+
+// ─── session_memories (new table for session continuity) ─────────────────────
+
+export type MemoryType =
+  | "decision"
+  | "unresolved"
+  | "active-work"
+  | "preference-learned"
+  | "correction";
+
+export interface SessionMemory {
+  id: string;
+  user_id: string;
+  memory_type: MemoryType;
+  content: string;
+  context_key: string | null;
+  relevance_score: number;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Aggregate Context Type ─────────────────────────────────────────────────
 // The full picture of a Komatik user — assembled by the adapters, consumed
 // by strategies that understand the Komatik ecosystem.
 
 export interface KomatikUserContext {
   profile: KomatikProfile | null;
+  preferences: UserPreferences | null;
   recentEvents: UserProductEvent[];
   crmContact: CrmContact | null;
   recentActivities: CrmActivity[];
@@ -325,4 +412,6 @@ export interface KomatikUserContext {
   floeScans: FloeScan[];
   forgeToolsAuthored: ForgeTool[];
   forgeUsage: ForgeUsage[];
+  recentOutcomes: EnrichmentOutcome[];
+  sessionMemories: SessionMemory[];
 }

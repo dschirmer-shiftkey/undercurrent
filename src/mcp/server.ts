@@ -6,8 +6,11 @@ import { KomatikIdentityAdapter } from "../komatik/identity-adapter.js";
 import { KomatikHistoryAdapter } from "../komatik/history-adapter.js";
 import { KomatikProjectAdapter } from "../komatik/project-adapter.js";
 import { KomatikMarketplaceAdapter } from "../komatik/marketplace-adapter.js";
+import { KomatikPreferenceAdapter } from "../komatik/preference-adapter.js";
+import { KomatikOutcomeAdapter } from "../komatik/outcome-adapter.js";
+import { KomatikMemoryAdapter } from "../komatik/memory-adapter.js";
 import type { KomatikDataClient } from "../komatik/client.js";
-import type { ContextLayer, ConversationTurn } from "../types.js";
+import type { ContextLayer, ConversationTurn, TargetPlatform } from "../types.js";
 
 export interface McpServerConfig {
   client: KomatikDataClient;
@@ -24,13 +27,25 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
   const adapterOptions = { client, userId };
 
   const identityAdapter = new KomatikIdentityAdapter(adapterOptions);
+  const preferenceAdapter = new KomatikPreferenceAdapter(adapterOptions);
+  const memoryAdapter = new KomatikMemoryAdapter(adapterOptions);
   const historyAdapter = new KomatikHistoryAdapter(adapterOptions);
+  const outcomeAdapter = new KomatikOutcomeAdapter(adapterOptions);
   const projectAdapter = new KomatikProjectAdapter(adapterOptions);
   const marketplaceAdapter = new KomatikMarketplaceAdapter(adapterOptions);
 
   const undercurrent = new Undercurrent({
-    adapters: [identityAdapter, historyAdapter, projectAdapter, marketplaceAdapter],
+    adapters: [
+      identityAdapter,
+      preferenceAdapter,
+      memoryAdapter,
+      historyAdapter,
+      outcomeAdapter,
+      projectAdapter,
+      marketplaceAdapter,
+    ],
     strategy: new DefaultStrategy(),
+    targetPlatform: "mcp",
   });
 
   const server = new McpServer(
@@ -39,8 +54,26 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
   );
 
   registerTools(server, undercurrent);
-  registerResources(server, identityAdapter, historyAdapter, projectAdapter, marketplaceAdapter);
-  registerPrompts(server, identityAdapter, historyAdapter, projectAdapter, marketplaceAdapter);
+  registerResources(
+    server,
+    identityAdapter,
+    preferenceAdapter,
+    memoryAdapter,
+    historyAdapter,
+    outcomeAdapter,
+    projectAdapter,
+    marketplaceAdapter,
+  );
+  registerPrompts(
+    server,
+    identityAdapter,
+    preferenceAdapter,
+    memoryAdapter,
+    historyAdapter,
+    outcomeAdapter,
+    projectAdapter,
+    marketplaceAdapter,
+  );
 
   return server;
 }
@@ -65,6 +98,10 @@ function registerTools(server: McpServer, undercurrent: Undercurrent): void {
           )
           .optional()
           .describe("Prior conversation turns for context"),
+        platform: z
+          .enum(["cursor", "claude", "chatgpt", "api", "mcp", "generic"])
+          .optional()
+          .describe("Target platform for output formatting (defaults to mcp)"),
       },
     },
     async (args) => {
@@ -77,6 +114,7 @@ function registerTools(server: McpServer, undercurrent: Undercurrent): void {
         message: args.message,
         conversation,
         enrichmentContext: { source: "mcp-external" },
+        targetPlatform: (args.platform as TargetPlatform | undefined) ?? "mcp",
       });
 
       return {
@@ -188,7 +226,10 @@ function registerTools(server: McpServer, undercurrent: Undercurrent): void {
 function registerResources(
   server: McpServer,
   identity: KomatikIdentityAdapter,
+  preferences: KomatikPreferenceAdapter,
+  memory: KomatikMemoryAdapter,
   history: KomatikHistoryAdapter,
+  outcomes: KomatikOutcomeAdapter,
   project: KomatikProjectAdapter,
   marketplace: KomatikMarketplaceAdapter,
 ): void {
@@ -294,12 +335,81 @@ function registerResources(
       };
     },
   );
+
+  server.registerResource(
+    "user-preferences",
+    "komatik://user/preferences",
+    {
+      title: "Komatik User Preferences",
+      description: "The user's persistent tone, style, code conventions, and response format preferences.",
+      mimeType: "application/json",
+    },
+    async () => {
+      const layers = await preferences.gather(dummyInput);
+      const data = layers[0] ?? { summary: "No preferences configured", data: {} };
+      return {
+        contents: [
+          {
+            uri: "komatik://user/preferences",
+            text: JSON.stringify({ summary: data.summary, ...data.data }, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerResource(
+    "user-memory",
+    "komatik://user/memory",
+    {
+      title: "Komatik Session Memory",
+      description: "Cross-session persistent context: decisions, active work, unresolved items, and learned preferences.",
+      mimeType: "application/json",
+    },
+    async () => {
+      const layers = await memory.gather(dummyInput);
+      const data = layers[0] ?? { summary: "No session memories", data: {} };
+      return {
+        contents: [
+          {
+            uri: "komatik://user/memory",
+            text: JSON.stringify({ summary: data.summary, ...data.data }, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerResource(
+    "user-outcomes",
+    "komatik://user/outcomes",
+    {
+      title: "Komatik Enrichment Outcomes",
+      description: "Feedback loop data: how the user responded to past enrichments (accepted, rejected, revised).",
+      mimeType: "application/json",
+    },
+    async () => {
+      const layers = await outcomes.gather(dummyInput);
+      const data = layers[0] ?? { summary: "No enrichment outcomes recorded", data: {} };
+      return {
+        contents: [
+          {
+            uri: "komatik://user/outcomes",
+            text: JSON.stringify({ summary: data.summary, ...data.data }, null, 2),
+          },
+        ],
+      };
+    },
+  );
 }
 
 function registerPrompts(
   server: McpServer,
   identity: KomatikIdentityAdapter,
+  preferences: KomatikPreferenceAdapter,
+  memory: KomatikMemoryAdapter,
   history: KomatikHistoryAdapter,
+  outcomes: KomatikOutcomeAdapter,
   project: KomatikProjectAdapter,
   marketplace: KomatikMarketplaceAdapter,
 ): void {
@@ -331,7 +441,7 @@ function registerPrompts(
       },
     },
     async (args) => {
-      const adapters = [identity, history, project, marketplace];
+      const adapters = [identity, preferences, memory, history, outcomes, project, marketplace];
       const layers: ContextLayer[] = [];
 
       const results = await Promise.allSettled(
