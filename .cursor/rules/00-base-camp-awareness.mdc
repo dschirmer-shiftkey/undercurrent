@@ -1,0 +1,99 @@
+---
+description: Base Camp Autonomous Workforce Awareness — you are the last line of defense
+alwaysApply: true
+---
+
+# Base Camp Awareness
+
+> Source: Komatik/.cursor/rules/KOMATIK-BASE-CAMP-PROMPT.md
+> Last distributed: 2026-04-15
+
+## What Is Base Camp?
+
+17 AI agents run 24/7 on a headless NUC, creating branches, opening PRs, and merging
+code into `dev` continuously. **You are the last line of defense** before code reaches
+`staging` or `master`.
+
+## 4 Mandatory Workflows
+
+### 1. Session Start
+```bash
+git fetch origin --prune
+git log --oneline HEAD..origin/main | wc -l
+gh pr list --state open --json number,title,headRefName --jq '.[] | select(.headRefName | test("^(claude/|agent/)")) | "#\(.number) — \(.title)"'
+```
+```
+CallMcpTool(server="user-komatik-readonly", toolName="query_events", arguments={"limit": 10})
+CallMcpTool(server="user-komatik-readonly", toolName="get_messages", arguments={"agent_id": "cursor-workspace"})
+```
+
+### 2. Before Any New Task
+```bash
+gh pr list --state all --limit 50 --json number,title,state --jq '.[] | select(.title | test("KEYWORD"; "i")) | "\(.state) #\(.number) — \(.title)"'
+git branch -r | grep -i "KEYWORD"
+```
+
+### 3. Reviewing Agent PRs — 10-Point Security Checklist
+A single BLOCKING failure = reject the PR.
+
+1. **No destructive SQL** — BLOCKING
+2. **RLS on new tables** — BLOCKING
+3. **Auth on API routes** — BLOCKING
+4. **No secrets in code** — BLOCKING
+5. **No force pushes** — BLOCKING
+6. **Prompt sanitization** — BLOCKING
+7. **Ownership checks** — HIGH
+8. **Rate limiting** — HIGH
+9. **Type safety** — HIGH
+10. **Import resolution** — MEDIUM
+
+### 4. After Agent Merges — Stability Check
+```bash
+git checkout main && git pull origin main
+npm run build
+npm test
+```
+
+## Agent Branch Patterns
+
+| Pattern | Origin |
+|---------|--------|
+| `claude/<two-word-slug>` | Claude Code on NUC |
+| `agent/<agent-id>/<desc>` | OpenClaw scheduled agent |
+| `cursor/<desc>-<4hex>` | Cursor on NUC |
+| `cursor/<desc>` (no hex) | Probably YOUR workspace |
+
+## Trust Levels
+
+**HIGH TRUST (quick review)**: docs, dependency patches, lint fixes, tests
+**VERIFY CAREFULLY**: pipeline logic, model routing, UI, API routes
+**ALWAYS LINE-BY-LINE**: schema migrations, RLS, Stripe/payment, auth, Edge Functions
+
+## MCP Bridge — Read + Write
+
+Read tools (query state):
+```
+CallMcpTool(server="user-komatik-readonly", toolName="get_system_health", arguments={})
+CallMcpTool(server="user-komatik-readonly", toolName="query_agent_runs", arguments={"limit": 10})
+CallMcpTool(server="user-komatik-readonly", toolName="query_events", arguments={"limit": 10})
+```
+
+Write tools (coordinate with NUC agents):
+```
+CallMcpTool(server="user-komatik-readonly", toolName="send_message", arguments={"to_agent": "coordinator", "subject": "...", "body": "...", "priority": "normal"})
+CallMcpTool(server="user-komatik-readonly", toolName="create_task", arguments={"project_slug": "undercurrent", "title": "...", "priority": "medium"})
+CallMcpTool(server="user-komatik-readonly", toolName="update_task_status", arguments={"task_id": "<uuid>", "column": "done"})
+```
+
+All writes are rate-limited and tagged `cursor-workspace`. NEVER conclude Base Camp "hasn't launched" from git alone — query the bridge first.
+
+## Emergency: Agent Merged Bad Code
+
+1. `git revert <hash> --no-edit && git push origin main`
+2. Close open PRs from the same agent session
+3. Notify David with PR number and what was destructive
+
+## The Rule
+
+> The agents work for us. We don't work for them.
+> Check before you build. Review before you merge. Test before you promote.

@@ -1,0 +1,56 @@
+---
+description: Undercurrent product context and guardrails
+globs:
+  - "**/*"
+---
+
+# Undercurrent — Cursor context
+
+## Umbrella
+
+- **Komatik** (parent repo) is the marketplace, prebuild pipeline, and knowledge flywheel.
+- **Undercurrent** is **Cross-Cutting Infrastructure**: an invisible prompt enrichment SDK that closes the gap between vague human input and precise AI understanding.
+- Operates at the intent layer — upstream of RAG (content retrieval), upstream of CoT (model reasoning), upstream of agent routing.
+- **Container, not contents** — pluggable adapters, strategies, and transports. Domain logic is one consumer, not the core.
+- **Expand, not narrow** — amplify creative possibilities from vague input (diverge → explore → converge → build).
+
+## Before large edits
+
+Read **`README.md`**.
+
+## Non-negotiables
+
+1. **Invisible by default** — the user must never be aware the enrichment is happening unless they opt into transparency.
+2. **3-Second Rule** — any clarifying question must be answerable in under 3 seconds. Binary, default-assumption, or structured choice only.
+3. **Bias toward action** — a stated wrong assumption is cheaper than a right question. Always prefer doing over asking.
+4. **Proportional enrichment** — simple requests get zero overhead. Only complex/ambiguous requests trigger deep enrichment.
+5. **No prompt engineering burden** — the user does NOT need to learn prompting skills. If a change requires user behavior change, it violates the core thesis.
+6. **Zero external dependencies** — core SDK depends only on Node.js built-ins. LLM strategies are opt-in.
+7. **Deterministic default** — the DefaultStrategy produces identical output for identical input. No randomness, no network calls.
+
+## Architecture
+
+```
+src/
+├── index.ts           Public API (Undercurrent class)
+├── types.ts           Core protocol types (all components speak this)
+├── engine/
+│   ├── pipeline.ts    4-stage pipeline (classify → harvest → analyze → compose)
+│   └── pipeline.test.ts
+├── strategies/
+│   ├── default.ts     Heuristic strategy (no LLM, deterministic)
+│   ├── default.test.ts
+│   └── komatik-pipeline.ts  Domain-specific (expand-first redesign pending)
+├── adapters/
+│   ├── conversation.ts  Chat history context
+│   ├── filesystem.ts    Project structure context
+│   └── git.ts           Branch/commit/diff context
+└── transports/
+    └── middleware.ts    Express middleware + Fetch handler
+```
+
+## Verification
+
+- `npm run build` — TypeScript compiles without errors
+- `npm run typecheck` — type-check only (no emit)
+- `npm test` — 31 tests passing
