@@ -53,6 +53,10 @@ src/
 │   ├── conversation.ts  Chat history context
 │   ├── filesystem.ts    Project structure context
 │   └── git.ts           Branch/commit/diff context
+├── mcp/                 External MCP server (@komatik/undercurrent/mcp)
+│   ├── postgrest-client.ts  Lightweight PostgREST adapter (native fetch)
+│   ├── server.ts        McpServer: 2 tools, 4 resources, 1 prompt
+│   └── index.ts         Bin entry (undercurrent-mcp)
 └── transports/
     └── middleware.ts    Express middleware + Fetch handler
 ```
@@ -76,8 +80,20 @@ All accept `{ client: KomatikDataClient, userId: string }`. The `KomatikDataClie
 
 `EnrichInput` and `AdapterInput` now accept optional `enrichmentContext?: Record<string, unknown>` for per-message metadata (source app, session ID).
 
+## External MCP Server
+
+An MCP server (`src/mcp/`) exposes Undercurrent to external tools (Cursor, Claude, AntiGravity) via stdio transport. Users carry their Komatik identity everywhere.
+
+**Tools**: `enrich` (full 4-stage pipeline), `get_context` (raw context layers from all adapters)
+**Resources**: `komatik://user/profile`, `komatik://user/history`, `komatik://user/projects`, `komatik://user/tools`
+**Prompts**: `enrich-message` (system prompt pre-loaded with user context)
+
+Dependencies: `@modelcontextprotocol/sdk` + `zod` (only imported by `src/mcp/`, core remains zero-dep). Supabase access uses a lightweight PostgREST client built on native `fetch` — no `@supabase/supabase-js`.
+
+Configured via env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATIK_USER_ID`.
+
 ## Verification
 
 - `npm run build` — TypeScript compiles without errors
 - `npm run typecheck` — type-check only (no emit)
-- `npm test` — 49 tests passing (7 test files: pipeline, default strategy, 4 Komatik adapters, integration)
+- `npm test` — 78 tests passing (9 test files: pipeline, default strategy, 4 Komatik adapters, integration, PostgREST client, MCP server)

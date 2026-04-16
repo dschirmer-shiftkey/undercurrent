@@ -592,7 +592,8 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 ```bash
 npm run build      # tsc → dist/
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run — 49 tests in 7 files
+npm test            # vitest run — 78 tests in 9 files
+npm run start:mcp   # Run the MCP server (requires env vars)
 ```
 
 **Source layout**:
@@ -613,6 +614,10 @@ src/
 │   ├── project-adapter.ts   # triage_intakes + floe_scans → active projects
 │   ├── marketplace-adapter.ts # forge_usage + forge_tools → marketplace activity
 │   └── testing.ts           # createMockClient() for tests
+├── mcp/                     # External MCP server (@komatik/undercurrent/mcp)
+│   ├── postgrest-client.ts  # Lightweight PostgREST adapter (native fetch, no Supabase SDK)
+│   ├── server.ts            # McpServer: 2 tools, 4 resources, 1 prompt
+│   └── index.ts             # Bin entry (undercurrent-mcp) — reads env vars, stdio transport
 ├── strategies/              # Pluggable enrichment logic
 │   ├── default.ts           # Heuristic (no LLM, deterministic) — reference impl
 │   └── komatik-pipeline.ts  # Domain-specific (Komatik marketplace enrichment)
@@ -636,8 +641,17 @@ src/
 - Import from `@komatik/undercurrent/komatik`
 - Mock client for tests: `createMockClient()` from `src/komatik/testing.ts`
 
+**External MCP server** (`src/mcp/`):
+- Exposes Undercurrent to Cursor, Claude, AntiGravity via stdio MCP transport
+- Tools: `enrich` (full pipeline), `get_context` (raw context layers)
+- Resources: `komatik://user/profile`, `komatik://user/history`, `komatik://user/projects`, `komatik://user/tools`
+- Prompts: `enrich-message` (system prompt pre-loaded with user context)
+- `PostgREST client` — lightweight `KomatikDataClient` using native `fetch`, no `@supabase/supabase-js`
+- Env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATIK_USER_ID`
+- Import from `@komatik/undercurrent/mcp`; bin: `undercurrent-mcp`
+
 **Critical invariants**:
-- Zero external runtime dependencies — only `node:*` built-ins
+- Zero external runtime dependencies in core — only `node:*` built-ins (`src/mcp/` has `@modelcontextprotocol/sdk` + `zod`)
 - DefaultStrategy is fully deterministic — same input = same output, no network, no randomness
 - Pipeline never crashes on adapter failure — graceful degradation via Promise.allSettled
 - High-specificity + atomic-scope messages pass through unchanged (zero enrichment overhead)
