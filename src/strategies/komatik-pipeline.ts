@@ -28,7 +28,6 @@ export interface KomatikPipelineOptions {
   llmCall?: (prompt: string, systemPrompt: string) => Promise<string>;
   domainConfigs?: DomainConfig[];
   featureCatalog?: FeatureCatalogEntry[];
-  confidenceThreshold?: number;
   yggdrasil?: boolean;
 }
 
