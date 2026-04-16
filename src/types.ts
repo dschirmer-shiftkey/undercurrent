@@ -162,6 +162,7 @@ export interface AdapterInput {
   intent: IntentSignal;
   conversation: ConversationTurn[];
   existingContext: ContextLayer[];
+  enrichmentContext?: Record<string, unknown>;
 }
 
 // ─── Strategy Interface ─────────────────────────────────────────────────────

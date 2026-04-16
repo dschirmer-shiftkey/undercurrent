@@ -1,0 +1,97 @@
+---
+description: Undercurrent architecture — how to extend adapters, strategies, and transports
+globs: "src/**/*.ts"
+alwaysApply: false
+---
+
+# Architecture Extension Guide
+
+## Core Protocol
+
+All components communicate through types defined in `src/types.ts`. Read it first — it is the single source of truth for the data model.
+
+## Pipeline Flow
+
+```
+enrich(message, conversation?)
+  → Stage 1: strategy.classifyIntent()      → IntentSignal
+  → determineDepth(intent)                   → none/light/standard/deep
+    → "none" → passthrough (return original message unchanged)
+  → Stage 2: adapters[].gather() in parallel → ContextLayer[]
+  → Stage 3: strategy.analyzeGaps()          → Gap[]
+    → strategy.resolveGap() for each         → GapResolution (filled|assumed|needs-clarification)
+  → Stage 4: strategy.compose()              → enrichedMessage string
+  → return EnrichedPrompt
+```
+
+## Adding an Adapter
+
+1. Create `src/adapters/your-adapter.ts`
+2. Implement `ContextAdapter` interface (name, priority, available(), gather())
+3. Export from `src/adapters/index.ts`
+4. Priority is an integer — lower = runs first. Built-ins: conversation=1, git=2, filesystem=3
+
+```typescript
+import type { AdapterInput, ContextAdapter, ContextLayer } from "../types.js";
+
+export class YourAdapter implements ContextAdapter {
+  readonly name = "your-adapter";
+  readonly priority = 5;
+
+  async available(): Promise<boolean> {
+    // Return false if this context source isn't accessible
+    return true;
+  }
+
+  async gather(input: AdapterInput): Promise<ContextLayer[]> {
+    // input has: message, intent, conversation, existingContext
+    // Return ContextLayer[] — each with source, priority, timestamp, data, summary
+    return [{
+      source: this.name,
+      priority: this.priority,
+      timestamp: Date.now(),
+      data: { /* structured data */ },
+      summary: "Human-readable summary for composition",
+    }];
+  }
+}
+```
+
+## Adding a Strategy
+
+1. Create `src/strategies/your-strategy.ts`
+2. Implement `EnrichmentStrategy` interface (name, classifyIntent, analyzeGaps, resolveGap, compose)
+3. Export from `src/strategies/index.ts`
+4. Strategies are mutually exclusive — one per Undercurrent instance
+
+Key contracts:
+- `classifyIntent` → must return a full `IntentSignal` (never partial)
+- `analyzeGaps` → return `Gap[]` with `resolution: null` (pipeline resolves them)
+- `resolveGap` → return `GapResolution` — one of: filled, assumed, needs-clarification
+- `compose` → return the final enriched message string
+
+## Adding a Transport
+
+Transports live in `src/transports/`. They wrap the Pipeline for different HTTP frameworks. Current: Express middleware + Fetch API handler. Add new ones (e.g., Hono, Fastify) following the same pattern.
+
+## Komatik Identity Adapters
+
+Four adapters in `src/komatik/` implement `ContextAdapter` and query Supabase tables from the Komatik ecosystem (PR #800). They accept a `KomatikDataClient` — a minimal interface that any Supabase client satisfies (defined in `src/komatik/client.ts`).
+
+```typescript
+import { KomatikIdentityAdapter, KomatikHistoryAdapter } from "@komatik/undercurrent/komatik";
+
+new KomatikIdentityAdapter({ client: supabase, userId: user.id })
+```
+
+Adapters: Identity (komatik_profiles), History (user_product_events + crm), Projects (triage + floe), Marketplace (forge). Row types in `src/komatik/types.ts`. Mock client for tests: `createMockClient()` from `src/komatik/testing.ts`.
+
+## Proportional Enrichment
+
+The pipeline auto-calibrates depth based on intent:
+- `high` specificity + `atomic` scope → `none` (passthrough)
+- `high` specificity → `light`
+- `medium` specificity → `standard`
+- `low` specificity → `deep`
+
+New strategies should respect this — don't burn cycles on crystal-clear requests.

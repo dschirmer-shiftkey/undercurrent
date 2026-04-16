@@ -1,0 +1,65 @@
+---
+description: Testing conventions for Undercurrent
+globs: "**/*.test.ts"
+alwaysApply: false
+---
+
+# Testing Conventions
+
+## Framework
+
+- **vitest** — `npm test` (run once), `npm run test:watch` (watch mode)
+- Test files colocated with source: `pipeline.ts` → `pipeline.test.ts`
+- Tests excluded from build via tsconfig `"exclude": ["**/*.test.ts"]`
+
+## Test Utilities
+
+### Stub adapter factory (from pipeline.test.ts)
+
+```typescript
+function stubAdapter(
+  name: string,
+  layers: ContextLayer[] = [],
+  opts: { available?: boolean; priority?: number } = {},
+): ContextAdapter {
+  return {
+    name,
+    priority: opts.priority ?? 1,
+    available: async () => opts.available ?? true,
+    gather: async () => layers,
+  };
+}
+```
+
+### Config factory
+
+```typescript
+function makeConfig(overrides: Partial<UndercurrentConfig> = {}): UndercurrentConfig {
+  return {
+    adapters: [],
+    strategy: new DefaultStrategy(),
+    ...overrides,
+  };
+}
+```
+
+## What to Test
+
+- **Strategy tests**: classifyIntent accuracy, gap detection, gap resolution logic, compose output format
+- **Pipeline tests**: stage ordering, adapter orchestration, hook firing, timeout handling, depth calibration
+- **Adapter tests**: availability detection, context layer structure, graceful failure on missing resources
+- **New features**: must include tests covering the happy path + at least one edge case
+
+## Assertions Style
+
+- Use `expect(x).toBe(y)` for primitives
+- Use `expect(x).toEqual(y)` for objects/arrays
+- Use `expect(x).toContain(y)` for substring/array membership
+- Use `vi.fn()` / `vi.spyOn()` for mocks — keep mocking minimal
+
+## Running
+
+```bash
+npm test          # single run, CI mode
+npm run test:watch # interactive watch
+```
