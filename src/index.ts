@@ -7,6 +7,8 @@ import type {
   EnrichedPrompt,
   EnrichmentStrategy,
   PipelineHooks,
+  ProcessResult,
+  SessionHealth,
   UndercurrentConfig,
 } from "./types.js";
 
@@ -21,6 +23,10 @@ export class Undercurrent {
 
   async enrich(input: EnrichInput): Promise<EnrichedPrompt> {
     return this.pipeline.enrich(input);
+  }
+
+  async process(input: EnrichInput): Promise<ProcessResult> {
+    return this.pipeline.process(input);
   }
 
   setHooks(hooks: PipelineHooks): void {
@@ -42,10 +48,22 @@ export class Undercurrent {
   get strategy(): EnrichmentStrategy {
     return this.config.strategy;
   }
+
+  get sessionHealth(): SessionHealth | null {
+    return this.pipeline.getSessionHealth();
+  }
+
+  get sessionId(): string | null {
+    return this.pipeline.getSessionId();
+  }
 }
 
 export { Pipeline } from "./engine/pipeline.js";
 export type { EnrichInput } from "./engine/pipeline.js";
+export { SessionMonitor, estimateTokens } from "./engine/session-monitor.js";
+export { Compactor } from "./engine/compactor.js";
+export { Checkpointer } from "./engine/checkpointer.js";
+export { ModelRouter, TaskDomainClassifier, ModelScorer } from "./engine/model-router.js";
 
 export type {
   Action,
@@ -53,19 +71,38 @@ export type {
   Assumption,
   Clarification,
   ClarificationOption,
+  CompactionResult,
   ContextAdapter,
   ContextLayer,
   ConversationTurn,
+  DecisionRecord,
   EmotionalLoad,
   EnrichedPrompt,
   EnrichmentMetadata,
   EnrichmentStrategy,
   Gap,
   GapResolution,
+  HandoffArtifact,
   IntentSignal,
+  ModelCallerFn,
+  ModelCallerInput,
+  ModelCallerOutput,
+  ModelOption,
+  ModelProvider,
+  ModelRecommendation,
+  ModelRouterConfig,
   PipelineHooks,
+  ProcessResult,
   Scope,
+  ScoringWeights,
+  SessionHealth,
+  SessionMemoryInput,
+  SessionMonitorConfig,
+  SessionSnapshot,
+  SessionState,
+  SessionWriter,
   Specificity,
+  TaskDomain,
   TargetPlatform,
   UndercurrentConfig,
 } from "./types.js";

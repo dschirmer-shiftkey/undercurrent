@@ -5,6 +5,9 @@ export { KomatikMarketplaceAdapter } from "./marketplace-adapter.js";
 export { KomatikPreferenceAdapter } from "./preference-adapter.js";
 export { KomatikOutcomeAdapter } from "./outcome-adapter.js";
 export { KomatikMemoryAdapter } from "./memory-adapter.js";
+export { KomatikSessionWriter } from "./session-writer.js";
+export { KomatikModelUsageAdapter } from "./model-usage-adapter.js";
+export type { KomatikModelUsageAdapterOptions } from "./model-usage-adapter.js";
 
 export type {
   KomatikDataClient,
@@ -13,6 +16,9 @@ export type {
   KomatikQueryResult,
   KomatikQueryError,
   KomatikAdapterOptions,
+  KomatikWriteClient,
+  KomatikWriteQueryBuilder,
+  KomatikWriteFilterBuilder,
 } from "./client.js";
 
 export type {

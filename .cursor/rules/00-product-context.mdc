@@ -55,8 +55,13 @@ src/
 │   └── git.ts           Branch/commit/diff context
 ├── mcp/                 External MCP server (@komatik/undercurrent/mcp)
 │   ├── postgrest-client.ts  Lightweight PostgREST adapter (native fetch)
-│   ├── server.ts        McpServer: 2 tools, 4 resources, 1 prompt
+│   ├── server.ts        McpServer: 2 tools, 7 resources, 1 prompt
 │   └── index.ts         Bin entry (undercurrent-mcp)
+├── playground/          Live pipeline test harness (not compiled, runs via tsx)
+│   ├── transcript-parser.ts  Parse .jsonl agent transcripts → pipeline input
+│   ├── formatter.ts     Colorized stage-by-stage output formatting
+│   ├── repl.ts          Interactive REPL (npm run playground)
+│   └── replay.ts        Batch transcript replay (npm run replay)
 └── transports/
     └── middleware.ts    Express middleware + Fetch handler
 ```
@@ -69,10 +74,13 @@ Two strategies ship with the SDK:
 
 ## Komatik Identity Layer
 
-Four adapters in `src/komatik/` make Undercurrent identity-aware via the Komatik ID (Supabase user UUID). Import from `@komatik/undercurrent/komatik`.
+Seven adapters in `src/komatik/` make Undercurrent identity-aware via the Komatik ID (Supabase user UUID). Import from `@komatik/undercurrent/komatik`.
 
 - **KomatikIdentityAdapter** (priority 0) — queries `komatik_profiles`. Who is this user, their role, products used.
+- **KomatikPreferenceAdapter** (priority 0) — queries `user_preferences`. Tone, style, code conventions, always/never assume rules.
+- **KomatikMemoryAdapter** (priority 0) — queries `session_memories`. Cross-session decisions, active work, unresolved items. Expired memories auto-filtered.
 - **KomatikHistoryAdapter** (priority 1) — queries `user_product_events` + `crm_activities`. Behavioral trajectory, lead score.
+- **KomatikOutcomeAdapter** (priority 1) — queries `enrichment_outcomes`. Acceptance/rejection/revision feedback loop.
 - **KomatikProjectAdapter** (priority 2) — queries `triage_intakes` + `floe_scans`. Active projects, diagnostics, scan findings.
 - **KomatikMarketplaceAdapter** (priority 3) — queries `forge_usage` + `forge_tools`. MCP tool usage, authored tools.
 
@@ -84,9 +92,9 @@ All accept `{ client: KomatikDataClient, userId: string }`. The `KomatikDataClie
 
 An MCP server (`src/mcp/`) exposes Undercurrent to external tools (Cursor, Claude, AntiGravity) via stdio transport. Users carry their Komatik identity everywhere.
 
-**Tools**: `enrich` (full 4-stage pipeline), `get_context` (raw context layers from all adapters)
-**Resources**: `komatik://user/profile`, `komatik://user/history`, `komatik://user/projects`, `komatik://user/tools`
-**Prompts**: `enrich-message` (system prompt pre-loaded with user context)
+**Tools**: `enrich` (full 4-stage pipeline), `get_context` (raw context layers from all 7 adapters)
+**Resources**: `komatik://user/profile`, `komatik://user/preferences`, `komatik://user/memory`, `komatik://user/history`, `komatik://user/outcomes`, `komatik://user/projects`, `komatik://user/tools`
+**Prompts**: `enrich-message` (system prompt pre-loaded with user context from all 7 adapters)
 
 Dependencies: `@modelcontextprotocol/sdk` + `zod` (only imported by `src/mcp/`, core remains zero-dep). Supabase access uses a lightweight PostgREST client built on native `fetch` — no `@supabase/supabase-js`.
 
@@ -96,4 +104,6 @@ Configured via env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATI
 
 - `npm run build` — TypeScript compiles without errors
 - `npm run typecheck` — type-check only (no emit)
-- `npm test` — 78 tests passing (9 test files: pipeline, default strategy, 4 Komatik adapters, integration, PostgREST client, MCP server)
+- `npm test` — 108 tests passing (14 test files: pipeline, scope calibration, default strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server)
+- `npm run playground` — interactive REPL for live pipeline testing
+- `npm run replay` — batch transcript replay with structured reports
