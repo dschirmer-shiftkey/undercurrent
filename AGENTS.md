@@ -592,7 +592,7 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 ```bash
 npm run build       # tsc → dist/
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run — 108 tests in 14 files
+npm test            # vitest run — 182 tests in 20 files
 npm run start:mcp   # Run the MCP server (requires env vars)
 npm run playground  # Interactive REPL — live pipeline testing (tsx)
 npm run replay      # Batch transcript replay with reports (tsx)
@@ -603,21 +603,28 @@ npm run replay      # Batch transcript replay with reports (tsx)
 src/
 ├── types.ts                 # THE protocol — read first before any work
 ├── index.ts                 # Public API (Undercurrent class + re-exports)
-├── engine/pipeline.ts       # 4-stage pipeline: classify → harvest → analyze → compose
+├── engine/
+│   ├── pipeline.ts          # 4-stage pipeline: classify → harvest → analyze → compose + process()
+│   ├── session-monitor.ts   # Session health tracking (cold-start → healthy → degrading → critical)
+│   ├── compactor.ts         # Context distillation (heuristic + LLM-assisted)
+│   ├── checkpointer.ts      # Persistence orchestration via pluggable SessionWriter
+│   └── model-router.ts      # TaskDomainClassifier, ModelScorer, ModelRouter
 ├── adapters/                # Pluggable context sources
 │   ├── conversation.ts      # Chat history (decisions, topics, terminology)
 │   ├── git.ts               # Branch, commits, diff, working tree
 │   └── filesystem.ts        # Project structure, recent files, relevant content
 ├── komatik/                 # Komatik ecosystem identity layer (@komatik/undercurrent/komatik)
-│   ├── client.ts            # KomatikDataClient interface (Supabase-compatible, zero deps)
+│   ├── client.ts            # KomatikDataClient + KomatikWriteClient interfaces
 │   ├── types.ts             # Row types for all Supabase tables (PR #800 + internal track)
 │   ├── identity-adapter.ts  # komatik_profiles → who is this user
-│   ├── preference-adapter.ts # user_preferences → tone, style, code conventions, always-assume rules
-│   ├── memory-adapter.ts    # session_memories → cross-session decisions, active work, unresolved items
+│   ├── preference-adapter.ts # user_preferences → tone, style, code conventions
+│   ├── memory-adapter.ts    # session_memories → cross-session decisions, active work
 │   ├── history-adapter.ts   # user_product_events + crm_activities → behavioral history
 │   ├── outcome-adapter.ts   # enrichment_outcomes → acceptance/rejection feedback loop
 │   ├── project-adapter.ts   # triage_intakes + floe_scans → active projects
 │   ├── marketplace-adapter.ts # forge_usage + forge_tools → marketplace activity
+│   ├── session-writer.ts    # KomatikSessionWriter → session_memories persistence
+│   ├── model-usage-adapter.ts # model_availability + llm_usage + enrichment_outcomes → scoring
 │   └── testing.ts           # createMockClient() for tests
 ├── mcp/                     # External MCP server (@komatik/undercurrent/mcp)
 │   ├── postgrest-client.ts  # Lightweight PostgREST adapter (native fetch, no Supabase SDK)
@@ -687,6 +694,28 @@ src/
 - `npm run replay -- <path.jsonl>` — batch-process Cursor agent transcripts (.jsonl). Per-message table, aggregate stats (depth distribution, intent actions, domain hints, gap types), interesting-case analysis. `--output report.json` for machine-readable output, `--verbose` for full detail.
 - Both tools wire real pipeline with generic adapters (Conversation, Git, Filesystem). No mocks, no Komatik adapters.
 - Excluded from tsconfig build. Runs via `tsx` (devDep).
+
+**Session Lifecycle Management** (`src/engine/session-monitor.ts`, `compactor.ts`, `checkpointer.ts`):
+- Invisible context management that eliminates the "session tax" — no manual briefing, cleanup, or resuming
+- `SessionMonitor` tracks health: cold-start → healthy → warm → degrading → critical (based on message count, estimated tokens, elapsed time, topic drift)
+- `Compactor` distills degrading sessions via heuristic or LLM-assisted compaction into `CompactionResult` (summary, decisions, active work, unresolved items, terminology, token savings)
+- `Checkpointer` persists state via pluggable `SessionWriter` interface — writes memories, snapshots, handoff artifacts
+- `KomatikSessionWriter` (`src/komatik/session-writer.ts`) implements persistence to Komatik's `session_memories` table via `KomatikWriteClient`
+- Pipeline auto-restores context on cold starts (empty conversation + existing snapshot), auto-compacts on degradation/critical health
+- `HandoffArtifact` — structured document for cross-session continuity (completed work, active work, decisions, next steps, terminology)
+- Config: `UndercurrentConfig.sessionMonitor` with `tokenBudget`, `checkpointInterval`, `compactionThreshold`, `writer`, `compactorLlmCall`
+
+**Intelligent Model Router** (`src/engine/model-router.ts`, `src/komatik/model-usage-adapter.ts`):
+- Per-user, per-domain model selection — Komatik internal first, opt-in via `UndercurrentConfig.modelRouter`
+- `TaskDomainClassifier` maps `IntentSignal` to 6 domains: coding, creative, analysis, planning, debugging, conversation (heuristic, no LLM needed)
+- `ModelScorer` ranks active models: `score = (w1 * successRate) + (w2 * acceptanceRate) + (w3 * (1 - normLatency)) + (w4 * affinityBonus)` — affinity weight auto-decays from 0.25 to 0.05 as real data exceeds 50 points
+- Default affinities: coding → Anthropic/OpenAI, creative → Google/Anthropic, analysis → OpenAI/Google
+- `KomatikModelUsageAdapter` queries three tables: `model_availability` (active roster from Tracker agent), `llm_usage` (success/latency/cost per model per user), `enrichment_outcomes` (acceptance rate per provider)
+- `Undercurrent.process(input)` = enrich → classify domain → load scoring data → rank models → call top model via pluggable `ModelCallerFn` → return `ProcessResult`
+- `enrich()` unchanged; `process()` is additive; zero new runtime dependencies
+- Komatik products pass their existing LLM gateway function as the `caller` callback
+- `ModelRecommendation` includes confidence (0-1), human-readable reasoning, data points count
+- `onModelSelected` callback for observability
 
 **Critical invariants**:
 - Zero external runtime dependencies in core — only `node:*` built-ins (`src/mcp/` has `@modelcontextprotocol/sdk` + `zod`)

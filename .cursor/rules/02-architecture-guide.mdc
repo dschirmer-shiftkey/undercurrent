@@ -14,6 +14,7 @@ All components communicate through types defined in `src/types.ts`. Read it firs
 
 ```
 enrich(message, conversation?)
+  → Cold-start restoration (if monitor + checkpointer + empty conversation)
   → Stage 1: strategy.classifyIntent()      → IntentSignal
   → determineDepth(intent)                   → none/light/standard/deep
     → "none" → passthrough (return original message unchanged)
@@ -21,7 +22,16 @@ enrich(message, conversation?)
   → Stage 3: strategy.analyzeGaps()          → Gap[]
     → strategy.resolveGap() for each         → GapResolution (filled|assumed|needs-clarification)
   → Stage 4: strategy.compose()              → enrichedMessage string
+  → Session tracking + checkpoint/compaction if needed
   → return EnrichedPrompt
+
+process(message, conversation?)
+  → enrich(input)                            → EnrichedPrompt
+  → TaskDomainClassifier.classify(intent)    → TaskDomain
+  → KomatikModelUsageAdapter.loadScoringData → ScoringData
+  → ModelScorer.score(domain, data)          → ModelRecommendation
+  → caller(model, messages, enrichedPrompt)  → ModelCallerOutput
+  → return ProcessResult { enrichedPrompt, modelRecommendation, modelResponse }
 ```
 
 ## Adding an Adapter
@@ -141,3 +151,83 @@ Frustrated or uncertain users get escalated depth automatically. Low-confidence 
 - `npm run replay -- <path.jsonl>` — batch-process Cursor agent transcripts. Produces per-message tables, aggregate stats, and interesting-case analysis. `--output report.json` for machine-readable output. `--verbose` for full stage detail.
 
 Both tools wire the real pipeline with generic adapters (Conversation, Git, Filesystem) — no mocks, no Komatik adapters (those need Supabase).
+
+## Session Lifecycle Management
+
+Components in `src/engine/` that invisibly manage context degradation across long sessions.
+
+### Components
+
+- **SessionMonitor** (`session-monitor.ts`) — Tracks session health via message count, estimated tokens, elapsed time, and topic drift. Health states: `cold-start` → `healthy` → `warm` → `degrading` → `critical`. Exposes `track()`, `getHealth()`, `getState()`, `needsCheckpoint()`, `resetAfterCompaction()`.
+- **Compactor** (`compactor.ts`) — Distills conversation history into a `CompactionResult` (summary, decisions, active work, unresolved items, terminology, token savings). Two modes: heuristic (fast, no LLM) and LLM-assisted (via optional `llmCall` callback).
+- **Checkpointer** (`checkpointer.ts`) — Orchestrates persistence via `SessionWriter` interface. Methods: `checkpoint()` (periodic), `compactAndCheckpoint()` (on degradation), `produceHandoff()` (session end), `restoreFromSnapshot()` (cold start).
+- **KomatikSessionWriter** (`src/komatik/session-writer.ts`) — Concrete `SessionWriter` that persists to Komatik's `session_memories` table via `KomatikWriteClient`.
+
+### Configuration
+
+```typescript
+{
+  sessionMonitor: {
+    userId: "komatik-user-id",
+    tokenBudget: 100_000,        // default token budget
+    checkpointInterval: 5,       // checkpoint every N messages
+    compactionThreshold: 0.7,    // compact when tokens exceed 70% of budget
+    writer: new KomatikSessionWriter({ client: supabase }),
+    compactorLlmCall: async (prompt) => llm(prompt),  // optional
+  }
+}
+```
+
+### Pipeline Integration
+
+The pipeline automatically:
+1. Restores context on cold starts (empty conversation + snapshot exists)
+2. Tracks health after every `enrich()` call
+3. Creates periodic checkpoints when `needsCheckpoint()` returns true
+4. Triggers compaction + snapshot when health reaches `degrading` or `critical`
+5. Resets token estimates after compaction
+
+## Intelligent Model Router
+
+Components in `src/engine/model-router.ts` and `src/komatik/model-usage-adapter.ts` for per-user model selection.
+
+### Components
+
+- **TaskDomainClassifier** — Maps `IntentSignal` (action + domainHints + rawFragments) to one of 6 `TaskDomain`s via heuristic pattern matching. No LLM needed.
+- **ModelScorer** — Ranks available models using a weighted formula: `score = (w1 * successRate) + (w2 * acceptanceRate) + (w3 * (1 - normLatency)) + (w4 * affinityBonus)`. Default weights: 0.35/0.30/0.10/0.25. Affinity weight auto-decays to 0.05 when data exceeds 50 points.
+- **ModelRouter** — Orchestrator that combines classification + scoring. Used by `Pipeline.process()`.
+- **KomatikModelUsageAdapter** — Queries `model_availability`, `llm_usage`, and `enrichment_outcomes` to build `ScoringData` for the scorer.
+
+### Configuration
+
+```typescript
+{
+  modelRouter: {
+    enabled: true,
+    caller: myLlmGateway,              // Komatik product's existing LLM gateway function
+    userId: "komatik-user-id",
+    client: supabase,                   // KomatikDataClient for table queries
+    defaultProvider: "anthropic",       // fallback when no roster
+    scoringWeights: { latency: 0.3 },  // optional overrides
+    onModelSelected: (rec) => log(rec), // observability callback
+  }
+}
+```
+
+### Default Affinities (< 10 data points)
+
+| Domain | 1st | 2nd |
+|--------|-----|-----|
+| coding | anthropic | openai |
+| debugging | anthropic | openai |
+| creative | google | anthropic |
+| analysis | openai | google |
+| planning | anthropic | openai |
+| conversation | anthropic | google |
+
+### Key Design Decisions
+
+- `enrich()` is unchanged — `process()` is strictly additive
+- No provider SDKs imported — model calling is via pluggable `ModelCallerFn` callback
+- Model roster is queried live from `model_availability` (managed by Tracker agent on NUC)
+- `ModelRecommendation` attached to `EnrichmentMetadata` for observability even via `enrich()`

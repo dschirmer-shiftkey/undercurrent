@@ -32,18 +32,23 @@ Read **`README.md`**.
 
 ```
 src/
-├── index.ts           Public API (Undercurrent class)
+├── index.ts           Public API (Undercurrent class: enrich + process)
 ├── types.ts           Core protocol types (all components speak this)
 ├── engine/
-│   ├── pipeline.ts    4-stage pipeline (classify → harvest → analyze → compose)
-│   └── pipeline.test.ts
+│   ├── pipeline.ts          4-stage pipeline + process() orchestration
+│   ├── session-monitor.ts   Session health tracking (cold-start → critical)
+│   ├── compactor.ts         Context distillation (heuristic + LLM)
+│   ├── checkpointer.ts      Persistence via pluggable SessionWriter
+│   └── model-router.ts      TaskDomainClassifier, ModelScorer, ModelRouter
 ├── komatik/           Komatik identity layer (@komatik/undercurrent/komatik)
-│   ├── client.ts      KomatikDataClient interface (Supabase-compatible)
+│   ├── client.ts      KomatikDataClient + KomatikWriteClient interfaces
 │   ├── types.ts       Row types for ecosystem Supabase tables
 │   ├── identity-adapter.ts   komatik_profiles → user identity
 │   ├── history-adapter.ts    user_product_events + crm → behavior
 │   ├── project-adapter.ts    triage_intakes + floe_scans → projects
 │   ├── marketplace-adapter.ts forge_usage + forge_tools → marketplace
+│   ├── session-writer.ts     KomatikSessionWriter → session_memories persistence
+│   ├── model-usage-adapter.ts model_availability + llm_usage + enrichment_outcomes
 │   └── testing.ts     Mock client for tests
 ├── strategies/
 │   ├── default.ts     Heuristic strategy (no LLM, deterministic)
@@ -100,10 +105,30 @@ Dependencies: `@modelcontextprotocol/sdk` + `zod` (only imported by `src/mcp/`, 
 
 Configured via env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATIK_USER_ID`.
 
+## Session Lifecycle Management
+
+Invisible context management that eliminates the "session tax". Configured via `UndercurrentConfig.sessionMonitor`.
+
+- **SessionMonitor** — tracks health (cold-start → healthy → warm → degrading → critical) based on message count, estimated tokens, elapsed time, and topic drift
+- **Compactor** — distills degrading sessions via heuristic or LLM-assisted compaction
+- **Checkpointer** — persists memories, snapshots, and handoff artifacts via pluggable `SessionWriter`
+- **KomatikSessionWriter** — concrete persistence to Komatik's `session_memories` table
+- Pipeline auto-restores context on cold starts, auto-compacts on degradation
+
+## Intelligent Model Router
+
+Per-user, per-domain model selection. Komatik-internal first. Configured via `UndercurrentConfig.modelRouter`.
+
+- **TaskDomainClassifier** — maps `IntentSignal` to 6 domains (coding, creative, analysis, planning, debugging, conversation)
+- **ModelScorer** — ranks active models using success rate, acceptance rate, latency, and affinity heuristics (affinity auto-decays with data)
+- **KomatikModelUsageAdapter** — queries `model_availability` + `llm_usage` + `enrichment_outcomes`
+- `Undercurrent.process()` = enrich → classify → score → call via pluggable `ModelCallerFn`
+- `enrich()` unchanged; `process()` is additive; zero new runtime deps
+
 ## Verification
 
 - `npm run build` — TypeScript compiles without errors
 - `npm run typecheck` — type-check only (no emit)
-- `npm test` — 108 tests passing (14 test files: pipeline, scope calibration, default strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server)
+- `npm test` — 182 tests passing (20 test files: pipeline, scope calibration, default strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server, session monitor, compactor, checkpointer, session lifecycle, model router, model router integration)
 - `npm run playground` — interactive REPL for live pipeline testing
 - `npm run replay` — batch transcript replay with structured reports
