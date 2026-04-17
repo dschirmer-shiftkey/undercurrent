@@ -1,10 +1,15 @@
 {
   "name": "@komatik/undercurrent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Invisible prompt enrichment engine — translates vague human intent into precise AI comprehension",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -34,12 +39,21 @@
   "bin": {
     "undercurrent-mcp": "./dist/mcp/index.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "prepublishOnly": "npm run build",
     "start:mcp": "node dist/mcp/index.js",
     "playground": "tsx src/playground/repl.ts",
     "replay": "tsx src/playground/replay.ts"
@@ -55,17 +69,38 @@
   ],
   "author": "Komatik",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dschirmer-shiftkey/undercurrent.git"
+  },
+  "homepage": "https://github.com/dschirmer-shiftkey/undercurrent#readme",
+  "bugs": {
+    "url": "https://github.com/dschirmer-shiftkey/undercurrent/issues"
+  },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.6.0",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.58.2",
     "vitest": "^3.1.0"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=20"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.3.6"
   }
 }

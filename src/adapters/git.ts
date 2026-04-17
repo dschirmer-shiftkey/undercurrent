@@ -52,14 +52,10 @@ export class GitAdapter implements ContextAdapter {
       this.getDiffSummary(),
     ]);
 
-    const branchName =
-      branch.status === "fulfilled" ? branch.value : "unknown";
-    const statusLines =
-      status.status === "fulfilled" ? status.value : [];
-    const commits =
-      recentCommits.status === "fulfilled" ? recentCommits.value : [];
-    const diffStat =
-      diff.status === "fulfilled" ? diff.value : "";
+    const branchName = branch.status === "fulfilled" ? branch.value : "unknown";
+    const statusLines = status.status === "fulfilled" ? status.value : [];
+    const commits = recentCommits.status === "fulfilled" ? recentCommits.value : [];
+    const diffStat = diff.status === "fulfilled" ? diff.value : "";
 
     layers.push({
       source: this.name,
@@ -83,7 +79,10 @@ export class GitAdapter implements ContextAdapter {
         priority: this.priority,
         timestamp: Date.now(),
         data: { commits },
-        summary: `Last ${commits.length} commits: ${commits.slice(0, 3).map((c) => c.subject).join("; ")}`,
+        summary: `Last ${commits.length} commits: ${commits
+          .slice(0, 3)
+          .map((c) => c.subject)
+          .join("; ")}`,
       });
     }
 
@@ -115,9 +114,7 @@ export class GitAdapter implements ContextAdapter {
 
   private async getRecentCommits(): Promise<GitCommit[]> {
     const format = "%H|%s|%an|%ai";
-    const result = await this.git(
-      `log --oneline --format="${format}" -${this.maxCommits}`,
-    );
+    const result = await this.git(`log --oneline --format="${format}" -${this.maxCommits}`);
     return result
       .split("\n")
       .filter(Boolean)

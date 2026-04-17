@@ -15,9 +15,7 @@ export class KomatikMarketplaceAdapter implements ContextAdapter {
   private readonly userId: string;
   private readonly maxUsageRecords: number;
 
-  constructor(
-    options: KomatikAdapterOptions & { maxUsageRecords?: number },
-  ) {
+  constructor(options: KomatikAdapterOptions & { maxUsageRecords?: number }) {
     this.client = options.client;
     this.userId = options.userId;
     this.maxUsageRecords = options.maxUsageRecords ?? 50;
@@ -35,10 +33,8 @@ export class KomatikMarketplaceAdapter implements ContextAdapter {
       this.fetchAuthoredTools(),
     ]);
 
-    const usage =
-      usageResult.status === "fulfilled" ? usageResult.value : [];
-    const tools =
-      toolsResult.status === "fulfilled" ? toolsResult.value : [];
+    const usage = usageResult.status === "fulfilled" ? usageResult.value : [];
+    const tools = toolsResult.status === "fulfilled" ? toolsResult.value : [];
 
     if (usage.length > 0 || tools.length > 0) {
       layers.push({
@@ -86,10 +82,7 @@ export class KomatikMarketplaceAdapter implements ContextAdapter {
     if (usage.length > 0) {
       const toolUsageCounts = new Map<string, number>();
       for (const u of usage) {
-        toolUsageCounts.set(
-          u.tool_id,
-          (toolUsageCounts.get(u.tool_id) ?? 0) + 1,
-        );
+        toolUsageCounts.set(u.tool_id, (toolUsageCounts.get(u.tool_id) ?? 0) + 1);
       }
 
       const uniqueTools = toolUsageCounts.size;
@@ -109,9 +102,7 @@ export class KomatikMarketplaceAdapter implements ContextAdapter {
         .slice(0, 3)
         .map((t) => t.name)
         .join(", ");
-      parts.push(
-        `Authored ${tools.length} tool(s) (${activeTools.length} active): ${toolNames}`,
-      );
+      parts.push(`Authored ${tools.length} tool(s) (${activeTools.length} active): ${toolNames}`);
     }
 
     return parts.join(". ") || "No marketplace activity.";

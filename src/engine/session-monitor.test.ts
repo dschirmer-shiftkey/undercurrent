@@ -11,9 +11,7 @@ describe("SessionMonitor", () => {
 
   it("transitions to healthy after first message with conversation", () => {
     const monitor = new SessionMonitor();
-    const health = monitor.track("hello", [
-      { role: "user", content: "previous message" },
-    ]);
+    const health = monitor.track("hello", [{ role: "user", content: "previous message" }]);
     expect(health).toBe("healthy");
   });
 
@@ -40,27 +38,21 @@ describe("SessionMonitor", () => {
   it("transitions to warm when token budget passes 40%", () => {
     const monitor = new SessionMonitor({ tokenBudget: 100 });
     const longMessage = "x".repeat(200);
-    const health = monitor.track(longMessage, [
-      { role: "user", content: "ctx" },
-    ]);
+    const health = monitor.track(longMessage, [{ role: "user", content: "ctx" }]);
     expect(health).toBe("warm");
   });
 
   it("transitions to degrading when token budget passes 65%", () => {
     const monitor = new SessionMonitor({ tokenBudget: 100 });
     const longMessage = "x".repeat(300);
-    const health = monitor.track(longMessage, [
-      { role: "user", content: "ctx" },
-    ]);
+    const health = monitor.track(longMessage, [{ role: "user", content: "ctx" }]);
     expect(health).toBe("degrading");
   });
 
   it("transitions to critical when token budget passes 85%", () => {
     const monitor = new SessionMonitor({ tokenBudget: 100 });
     const longMessage = "x".repeat(400);
-    const health = monitor.track(longMessage, [
-      { role: "user", content: "ctx" },
-    ]);
+    const health = monitor.track(longMessage, [{ role: "user", content: "ctx" }]);
     expect(health).toBe("critical");
   });
 
@@ -77,9 +69,7 @@ describe("SessionMonitor", () => {
 
   it("does not count topic shifts for related messages", () => {
     const monitor = new SessionMonitor({ tokenBudget: 100_000 });
-    monitor.track("implement the payment system", [
-      { role: "user", content: "ctx" },
-    ]);
+    monitor.track("implement the payment system", [{ role: "user", content: "ctx" }]);
     monitor.track("add payment validation to the payment system", [
       { role: "user", content: "ctx" },
     ]);

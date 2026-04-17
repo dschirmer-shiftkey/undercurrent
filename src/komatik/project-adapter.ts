@@ -31,10 +31,8 @@ export class KomatikProjectAdapter implements ContextAdapter {
       this.fetchFloeScans(),
     ]);
 
-    const intakes =
-      intakesResult.status === "fulfilled" ? intakesResult.value : [];
-    const scans =
-      scansResult.status === "fulfilled" ? scansResult.value : [];
+    const intakes = intakesResult.status === "fulfilled" ? intakesResult.value : [];
+    const scans = scansResult.status === "fulfilled" ? scansResult.value : [];
 
     if (intakes.length > 0) {
       layers.push({
@@ -93,9 +91,7 @@ export class KomatikProjectAdapter implements ContextAdapter {
   }
 
   private summarizeIntakes(intakes: TriageIntake[]): string {
-    const active = intakes.filter(
-      (i) => i.status !== "delivered" && i.status !== "cancelled",
-    );
+    const active = intakes.filter((i) => i.status !== "delivered" && i.status !== "cancelled");
     const delivered = intakes.filter((i) => i.status === "delivered");
 
     const parts: string[] = [];
@@ -103,12 +99,8 @@ export class KomatikProjectAdapter implements ContextAdapter {
     if (active.length > 0) {
       const top = active[0]!;
       const desc =
-        top.description.length > 80
-          ? top.description.slice(0, 80) + "..."
-          : top.description;
-      parts.push(
-        `Active triage: "${desc}" (${top.status}, ${top.urgency} urgency)`,
-      );
+        top.description.length > 80 ? top.description.slice(0, 80) + "..." : top.description;
+      parts.push(`Active triage: "${desc}" (${top.status}, ${top.urgency} urgency)`);
       if (active.length > 1) {
         parts.push(`+${active.length - 1} more active`);
       }
@@ -141,9 +133,7 @@ export class KomatikProjectAdapter implements ContextAdapter {
       .join(", ");
 
     const findingsPart =
-      totalFindings > 0
-        ? ` — ${totalFindings} total findings (${totalCritical} critical)`
-        : "";
+      totalFindings > 0 ? ` — ${totalFindings} total findings (${totalCritical} critical)` : "";
 
     return `${scans.length} Floe scan(s): ${statusParts}${findingsPart}`;
   }

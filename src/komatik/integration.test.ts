@@ -10,8 +10,7 @@ import { createMockClient } from "./testing.js";
 import type { UndercurrentConfig } from "../types.js";
 
 const now = Date.now();
-const hoursAgo = (h: number) =>
-  new Date(now - h * 60 * 60 * 1000).toISOString();
+const hoursAgo = (h: number) => new Date(now - h * 60 * 60 * 1000).toISOString();
 
 function buildFullEcosystemClient() {
   return createMockClient({
@@ -225,16 +224,12 @@ describe("Komatik Integration — Full Pipeline", () => {
     expect(sources).toContain("komatik-marketplace");
     expect(sources).toContain("conversation");
 
-    const identityLayer = result.context.find(
-      (c) => c.source === "komatik-identity",
-    );
+    const identityLayer = result.context.find((c) => c.source === "komatik-identity");
     expect(identityLayer!.summary).toContain("Sarah Chen");
     expect(identityLayer!.summary).toContain("founder");
 
     const projectLayer = result.context.find(
-      (c) =>
-        c.source === "komatik-projects" &&
-        c.summary.includes("Floe"),
+      (c) => c.source === "komatik-projects" && c.summary.includes("Floe"),
     );
     expect(projectLayer).toBeDefined();
     expect(projectLayer!.summary).toContain("8 total findings");
@@ -312,9 +307,7 @@ describe("Komatik Integration — Full Pipeline", () => {
     });
 
     expect(result.enrichedMessage).toBeTruthy();
-    const komatikLayers = result.context.filter((c) =>
-      c.source.startsWith("komatik-"),
-    );
+    const komatikLayers = result.context.filter((c) => c.source.startsWith("komatik-"));
     expect(komatikLayers).toHaveLength(0);
   });
 });

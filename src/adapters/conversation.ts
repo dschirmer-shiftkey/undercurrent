@@ -82,10 +82,7 @@ export class ConversationAdapter implements ContextAdapter {
       for (const pattern of decisionPatterns) {
         const match = turn.content.match(pattern);
         if (match) {
-          const sentence = this.extractSentenceAround(
-            turn.content,
-            match.index ?? 0,
-          );
+          const sentence = this.extractSentenceAround(turn.content, match.index ?? 0);
           decisions.push({
             summary: sentence.slice(0, 200),
             turnIndex: idx,
@@ -98,9 +95,7 @@ export class ConversationAdapter implements ContextAdapter {
     return decisions;
   }
 
-  private extractTopicTrajectory(
-    turns: AdapterInput["conversation"],
-  ): string[] {
+  private extractTopicTrajectory(turns: AdapterInput["conversation"]): string[] {
     const topics: string[] = [];
     let currentTopic = "";
 
@@ -118,9 +113,7 @@ export class ConversationAdapter implements ContextAdapter {
     return topics.slice(-5);
   }
 
-  private extractTerminology(
-    turns: AdapterInput["conversation"],
-  ): Map<string, number> {
+  private extractTerminology(turns: AdapterInput["conversation"]): Map<string, number> {
     const termCounts = new Map<string, number>();
     const codeTermPattern = /`([^`]+)`|(?:the\s+)?(\w+(?:[-_]\w+)+)/g;
 

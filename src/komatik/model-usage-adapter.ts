@@ -86,11 +86,19 @@ export class KomatikModelUsageAdapter implements ContextAdapter {
 
     if (error || !data) return new Map();
 
-    const byModel = new Map<string, { successes: number; total: number; totalLatency: number; latencyCount: number }>();
+    const byModel = new Map<
+      string,
+      { successes: number; total: number; totalLatency: number; latencyCount: number }
+    >();
 
     for (const row of data as Record<string, unknown>[]) {
       const model = row.model as string;
-      const entry = byModel.get(model) ?? { successes: 0, total: 0, totalLatency: 0, latencyCount: 0 };
+      const entry = byModel.get(model) ?? {
+        successes: 0,
+        total: 0,
+        totalLatency: 0,
+        latencyCount: 0,
+      };
 
       entry.total++;
       if (row.success) entry.successes++;

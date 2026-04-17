@@ -158,9 +158,7 @@ describe("composeForPlatform", () => {
   it("handles empty context gracefully for all platforms", () => {
     const platforms = ["cursor", "claude", "api", "mcp", "chatgpt", "generic"] as const;
     for (const platform of platforms) {
-      const result = composeForPlatform(
-        makeInput({ platform, context: [], assumptions: [] }),
-      );
+      const result = composeForPlatform(makeInput({ platform, context: [], assumptions: [] }));
       expect(result).toBeTruthy();
       expect(result).toContain("fix the auth thing");
     }

@@ -82,7 +82,10 @@ describe("Compactor", () => {
       const compactor = new Compactor();
       const conversation: ConversationTurn[] = [
         { role: "user", content: "The `SessionMonitor` needs to track `tokenBudget`" },
-        { role: "assistant", content: "I'll update `SessionMonitor` to include `tokenBudget` tracking" },
+        {
+          role: "assistant",
+          content: "I'll update `SessionMonitor` to include `tokenBudget` tracking",
+        },
         { role: "user", content: "Also check the `SessionMonitor` health" },
       ];
       const state = makeSessionState();
@@ -124,22 +127,22 @@ describe("Compactor", () => {
 
       const result = compactor.heuristicCompact(conversation, state);
 
-      const pgDecisions = result.decisions.filter((d) =>
-        d.toLowerCase().includes("postgresql"),
-      );
+      const pgDecisions = result.decisions.filter((d) => d.toLowerCase().includes("postgresql"));
       expect(pgDecisions.length).toBeLessThanOrEqual(2);
     });
   });
 
   describe("LLM-assisted compact", () => {
     it("uses llmCall when provided", async () => {
-      const llmCall = vi.fn().mockResolvedValue(
-        "SUMMARY: Session focused on auth implementation\n" +
-        "DECISIONS:\n- Use JWT tokens\n- 24h expiry\n" +
-        "ACTIVE_WORK:\n- Login endpoint\n" +
-        "UNRESOLVED:\n- Token refresh logic\n" +
-        "TERMINOLOGY:\nJWT = JSON Web Token\nauthMiddleware = Express auth middleware",
-      );
+      const llmCall = vi
+        .fn()
+        .mockResolvedValue(
+          "SUMMARY: Session focused on auth implementation\n" +
+            "DECISIONS:\n- Use JWT tokens\n- 24h expiry\n" +
+            "ACTIVE_WORK:\n- Login endpoint\n" +
+            "UNRESOLVED:\n- Token refresh logic\n" +
+            "TERMINOLOGY:\nJWT = JSON Web Token\nauthMiddleware = Express auth middleware",
+        );
 
       const compactor = new Compactor({ llmCall });
       const conversation = makeConversation(10);

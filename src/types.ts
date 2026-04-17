@@ -1,3 +1,5 @@
+import type { KomatikDataClient } from "./komatik/client.js";
+
 // ─── Intent Signal ──────────────────────────────────────────────────────────
 // The structured representation of what the human is trying to do.
 // Produced by the IntentClassifier stage of the pipeline.
@@ -14,19 +16,9 @@ export type Action =
 
 export type Specificity = "high" | "medium" | "low";
 
-export type Scope =
-  | "atomic"
-  | "local"
-  | "cross-system"
-  | "product"
-  | "meta"
-  | "unknown";
+export type Scope = "atomic" | "local" | "cross-system" | "product" | "meta" | "unknown";
 
-export type EmotionalLoad =
-  | "neutral"
-  | "frustrated"
-  | "excited"
-  | "uncertain";
+export type EmotionalLoad = "neutral" | "frustrated" | "excited" | "uncertain";
 
 export interface IntentSignal {
   action: Action;
@@ -137,13 +129,7 @@ export interface EnrichmentMetadata {
 // Undercurrent tailors its enriched output to the target platform. Each
 // platform consumes context differently and benefits from different formats.
 
-export type TargetPlatform =
-  | "cursor"
-  | "claude"
-  | "chatgpt"
-  | "api"
-  | "mcp"
-  | "generic";
+export type TargetPlatform = "cursor" | "claude" | "chatgpt" | "api" | "mcp" | "generic";
 
 // ─── Pipeline Configuration ─────────────────────────────────────────────────
 
@@ -190,16 +176,9 @@ export interface AdapterInput {
 export interface EnrichmentStrategy {
   readonly name: string;
 
-  classifyIntent(
-    message: string,
-    conversation: ConversationTurn[],
-  ): Promise<IntentSignal>;
+  classifyIntent(message: string, conversation: ConversationTurn[]): Promise<IntentSignal>;
 
-  analyzeGaps(
-    intent: IntentSignal,
-    context: ContextLayer[],
-    message: string,
-  ): Promise<Gap[]>;
+  analyzeGaps(intent: IntentSignal, context: ContextLayer[], message: string): Promise<Gap[]>;
 
   resolveGap(
     gap: Gap,
@@ -227,7 +206,11 @@ export interface PipelineHooks {
   afterGather?: (context: ContextLayer[]) => void;
   beforeAnalyze?: (gaps: Gap[]) => void;
   afterAnalyze?: (gaps: Gap[]) => void;
-  beforeCompose?: (data: { message: string; intent: IntentSignal; context: ContextLayer[] }) => void;
+  beforeCompose?: (data: {
+    message: string;
+    intent: IntentSignal;
+    context: ContextLayer[];
+  }) => void;
   afterCompose?: (enriched: EnrichedPrompt) => void;
 }
 
@@ -237,12 +220,7 @@ export interface PipelineHooks {
 // pipeline to invisibly manage context degradation so the user never
 // has to manually brief/cleanup/resume.
 
-export type SessionHealth =
-  | "cold-start"
-  | "healthy"
-  | "warm"
-  | "degrading"
-  | "critical";
+export type SessionHealth = "cold-start" | "healthy" | "warm" | "degrading" | "critical";
 
 export interface SessionState {
   sessionId: string;
@@ -333,12 +311,7 @@ export type TaskDomain =
   | "debugging"
   | "conversation";
 
-export type ModelProvider =
-  | "anthropic"
-  | "openai"
-  | "google"
-  | "meta"
-  | "custom";
+export type ModelProvider = "anthropic" | "openai" | "google" | "meta" | "custom";
 
 export interface ModelOption {
   provider: ModelProvider;
@@ -390,7 +363,7 @@ export interface ModelRouterConfig {
   enabled: boolean;
   caller: ModelCallerFn;
   userId: string;
-  client: import("./komatik/client.js").KomatikDataClient;
+  client: KomatikDataClient;
   defaultProvider?: ModelProvider;
   scoringWeights?: Partial<ScoringWeights>;
   onModelSelected?: (rec: ModelRecommendation) => void;

@@ -1,8 +1,4 @@
-import type {
-  CompactionResult,
-  ConversationTurn,
-  SessionState,
-} from "../types.js";
+import type { CompactionResult, ConversationTurn, SessionState } from "../types.js";
 import { estimateTokens } from "./session-monitor.js";
 
 const RECENT_EXCHANGES_TO_KEEP = 5;
@@ -32,9 +28,7 @@ TERMINOLOGY: <key=value pairs of established terms>
 export class Compactor {
   private readonly llmCall?: (prompt: string) => Promise<string>;
 
-  constructor(options?: {
-    llmCall?: (prompt: string) => Promise<string>;
-  }) {
+  constructor(options?: { llmCall?: (prompt: string) => Promise<string> }) {
     this.llmCall = options?.llmCall;
   }
 
@@ -48,23 +42,19 @@ export class Compactor {
     return this.heuristicCompact(conversation, sessionState);
   }
 
-  heuristicCompact(
-    conversation: ConversationTurn[],
-    sessionState: SessionState,
-  ): CompactionResult {
-    const decisions = [
-      ...sessionState.decisionsThisSession,
-      ...extractDecisions(conversation),
-    ];
+  heuristicCompact(conversation: ConversationTurn[], sessionState: SessionState): CompactionResult {
+    const decisions = [...sessionState.decisionsThisSession, ...extractDecisions(conversation)];
     const uniqueDecisions = [...new Set(decisions)];
 
-    const activeWork = sessionState.activeWorkItems.length > 0
-      ? [...sessionState.activeWorkItems]
-      : extractActiveWork(conversation);
+    const activeWork =
+      sessionState.activeWorkItems.length > 0
+        ? [...sessionState.activeWorkItems]
+        : extractActiveWork(conversation);
 
-    const unresolved = sessionState.unresolvedItems.length > 0
-      ? [...sessionState.unresolvedItems]
-      : extractUnresolved(conversation);
+    const unresolved =
+      sessionState.unresolvedItems.length > 0
+        ? [...sessionState.unresolvedItems]
+        : extractUnresolved(conversation);
 
     const terminology = extractTerminology(conversation);
 
@@ -80,10 +70,7 @@ export class Compactor {
       activeWork.reduce((s, w) => s + estimateTokens(w), 0) +
       unresolved.reduce((s, u) => s + estimateTokens(u), 0) +
       recentExchanges.reduce((s, t) => s + estimateTokens(t.content), 0) +
-      Object.entries(terminology).reduce(
-        (s, [k, v]) => s + estimateTokens(`${k}: ${v}`),
-        0,
-      );
+      Object.entries(terminology).reduce((s, [k, v]) => s + estimateTokens(`${k}: ${v}`), 0);
 
     const summaryParts: string[] = [];
     if (uniqueDecisions.length > 0) {
@@ -114,9 +101,7 @@ export class Compactor {
     conversation: ConversationTurn[],
     sessionState: SessionState,
   ): Promise<CompactionResult> {
-    const conversationText = conversation
-      .map((t) => `[${t.role}]: ${t.content}`)
-      .join("\n\n");
+    const conversationText = conversation.map((t) => `[${t.role}]: ${t.content}`).join("\n\n");
 
     const prompt = COMPACTION_PROMPT_TEMPLATE + conversationText;
 
@@ -134,20 +119,15 @@ export class Compactor {
       (sum, turn) => sum + estimateTokens(turn.content),
       0,
     );
-    const compactedTokens = estimateTokens(llmResponse) +
+    const compactedTokens =
+      estimateTokens(llmResponse) +
       recentExchanges.reduce((s, t) => s + estimateTokens(t.content), 0);
 
     return {
       summary: parsed.summary || `LLM-compacted session (${sessionState.messageCount} messages).`,
-      decisions: parsed.decisions.length > 0
-        ? parsed.decisions
-        : sessionState.decisionsThisSession,
-      activeWork: parsed.activeWork.length > 0
-        ? parsed.activeWork
-        : sessionState.activeWorkItems,
-      unresolved: parsed.unresolved.length > 0
-        ? parsed.unresolved
-        : sessionState.unresolvedItems,
+      decisions: parsed.decisions.length > 0 ? parsed.decisions : sessionState.decisionsThisSession,
+      activeWork: parsed.activeWork.length > 0 ? parsed.activeWork : sessionState.activeWorkItems,
+      unresolved: parsed.unresolved.length > 0 ? parsed.unresolved : sessionState.unresolvedItems,
       terminology: parsed.terminology,
       recentExchanges,
       estimatedTokensSaved: Math.max(0, originalTokens - compactedTokens),
@@ -274,7 +254,9 @@ function parseLlmCompactionResponse(response: string): {
     terminology: {} as Record<string, string>,
   };
 
-  const summaryMatch = response.match(/SUMMARY:\s*(.+?)(?=\n(?:DECISIONS|ACTIVE_WORK|UNRESOLVED|TERMINOLOGY):|$)/s);
+  const summaryMatch = response.match(
+    /SUMMARY:\s*(.+?)(?=\n(?:DECISIONS|ACTIVE_WORK|UNRESOLVED|TERMINOLOGY):|$)/s,
+  );
   if (summaryMatch?.[1]) {
     result.summary = summaryMatch[1].trim();
   }
@@ -283,7 +265,9 @@ function parseLlmCompactionResponse(response: string): {
   result.activeWork = extractBulletList(response, "ACTIVE_WORK");
   result.unresolved = extractBulletList(response, "UNRESOLVED");
 
-  const termMatch = response.match(/TERMINOLOGY:\s*(.+?)(?=\n(?:SUMMARY|DECISIONS|ACTIVE_WORK|UNRESOLVED):|$)/s);
+  const termMatch = response.match(
+    /TERMINOLOGY:\s*(.+?)(?=\n(?:SUMMARY|DECISIONS|ACTIVE_WORK|UNRESOLVED):|$)/s,
+  );
   if (termMatch?.[1]) {
     const lines = termMatch[1].trim().split("\n");
     for (const line of lines) {
@@ -298,7 +282,10 @@ function parseLlmCompactionResponse(response: string): {
 }
 
 function extractBulletList(text: string, section: string): string[] {
-  const pattern = new RegExp(`${section}:\\s*(.+?)(?=\\n(?:SUMMARY|DECISIONS|ACTIVE_WORK|UNRESOLVED|TERMINOLOGY):|$)`, "s");
+  const pattern = new RegExp(
+    `${section}:\\s*(.+?)(?=\\n(?:SUMMARY|DECISIONS|ACTIVE_WORK|UNRESOLVED|TERMINOLOGY):|$)`,
+    "s",
+  );
   const match = text.match(pattern);
   if (!match?.[1]) return [];
 

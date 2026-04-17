@@ -341,7 +341,8 @@ function registerResources(
     "komatik://user/preferences",
     {
       title: "Komatik User Preferences",
-      description: "The user's persistent tone, style, code conventions, and response format preferences.",
+      description:
+        "The user's persistent tone, style, code conventions, and response format preferences.",
       mimeType: "application/json",
     },
     async () => {
@@ -363,7 +364,8 @@ function registerResources(
     "komatik://user/memory",
     {
       title: "Komatik Session Memory",
-      description: "Cross-session persistent context: decisions, active work, unresolved items, and learned preferences.",
+      description:
+        "Cross-session persistent context: decisions, active work, unresolved items, and learned preferences.",
       mimeType: "application/json",
     },
     async () => {
@@ -385,7 +387,8 @@ function registerResources(
     "komatik://user/outcomes",
     {
       title: "Komatik Enrichment Outcomes",
-      description: "Feedback loop data: how the user responded to past enrichments (accepted, rejected, revised).",
+      description:
+        "Feedback loop data: how the user responded to past enrichments (accepted, rejected, revised).",
       mimeType: "application/json",
     },
     async () => {
@@ -460,9 +463,10 @@ function registerPrompts(
 
       layers.sort((a, b) => a.priority - b.priority);
 
-      const contextBlock = layers.length > 0
-        ? layers.map((l) => `- [${l.source}]: ${l.summary}`).join("\n")
-        : "No Komatik context available.";
+      const contextBlock =
+        layers.length > 0
+          ? layers.map((l) => `- [${l.source}]: ${l.summary}`).join("\n")
+          : "No Komatik context available.";
 
       const systemContent =
         "You are assisting a Komatik ecosystem user. Here is their context:\n\n" +
@@ -476,7 +480,13 @@ function registerPrompts(
         content: { type: "text"; text: string };
       }> = [
         { role: "user" as const, content: { type: "text" as const, text: systemContent } },
-        { role: "assistant" as const, content: { type: "text" as const, text: "Understood. I have the user's Komatik context and will use it to personalize my responses." } },
+        {
+          role: "assistant" as const,
+          content: {
+            type: "text" as const,
+            text: "Understood. I have the user's Komatik context and will use it to personalize my responses.",
+          },
+        },
       ];
 
       if (args.message) {

@@ -24,10 +24,7 @@ import type {
 export class DefaultStrategy implements EnrichmentStrategy {
   readonly name = "default";
 
-  async classifyIntent(
-    message: string,
-    conversation: ConversationTurn[],
-  ): Promise<IntentSignal> {
+  async classifyIntent(message: string, conversation: ConversationTurn[]): Promise<IntentSignal> {
     const lower = message.toLowerCase();
     const words = lower.split(/\s+/);
 
@@ -121,9 +118,10 @@ export class DefaultStrategy implements EnrichmentStrategy {
         assumption: {
           id: randomUUID(),
           claim: `Inferred resolution for: ${gap.description}`,
-          basis: context.length > 0
-            ? `Based on ${context.length} context layer(s) from ${[...new Set(context.map((c) => c.source))].join(", ")}`
-            : "No supporting context — using best guess",
+          basis:
+            context.length > 0
+              ? `Based on ${context.length} context layer(s) from ${[...new Set(context.map((c) => c.source))].join(", ")}`
+              : "No supporting context — using best guess",
           confidence: inferredConfidence,
           source: "default-strategy",
           correctable: true,
@@ -158,7 +156,9 @@ export class DefaultStrategy implements EnrichmentStrategy {
 
     parts.push(`[Original]: ${message}`);
 
-    parts.push(`[Intent]: ${intent.action} (${intent.specificity} specificity, ${intent.scope} scope)`);
+    parts.push(
+      `[Intent]: ${intent.action} (${intent.specificity} specificity, ${intent.scope} scope)`,
+    );
 
     if (intent.domainHints.length > 0) {
       parts.push(`[Domain]: ${intent.domainHints.join(", ")}`);
@@ -304,7 +304,10 @@ export class DefaultStrategy implements EnrichmentStrategy {
   // ── Gap Resolution Helpers ─────────────────────────────────────────────
 
   private searchContextForGap(gap: Gap, layer: ContextLayer): string | null {
-    const keywords = gap.description.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    const keywords = gap.description
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 3);
     const summaryLower = layer.summary.toLowerCase();
 
     const matchCount = keywords.filter((k) => summaryLower.includes(k)).length;

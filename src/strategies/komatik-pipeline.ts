@@ -54,7 +54,11 @@ export interface KomatikEnrichmentData {
   detectedDomain: string;
   domainConfidence: number;
   techStack: Array<{ name: string; category: string; inferred: boolean }>;
-  features: Array<{ name: string; description: string; source: "explicit" | "inferred" | "standard" }>;
+  features: Array<{
+    name: string;
+    description: string;
+    source: "explicit" | "inferred" | "standard";
+  }>;
   constraints: {
     platform: string;
     hostingPreference: string | null;
@@ -72,24 +76,31 @@ export interface KomatikEnrichmentData {
   };
 }
 
-const DOMAIN_SIGNALS: Record<string, { keywords: RegExp; defaultStack: string[]; projectType: string }> = {
+const DOMAIN_SIGNALS: Record<
+  string,
+  { keywords: RegExp; defaultStack: string[]; projectType: string }
+> = {
   ecommerce: {
-    keywords: /\b(shop|store|cart|checkout|product|catalog|inventory|ecommerce|e-commerce|marketplace|sell|buy|payment)\b/i,
+    keywords:
+      /\b(shop|store|cart|checkout|product|catalog|inventory|ecommerce|e-commerce|marketplace|sell|buy|payment)\b/i,
     defaultStack: ["Next.js", "Supabase", "Stripe", "Tailwind CSS"],
     projectType: "Web App",
   },
   saas: {
-    keywords: /\b(saas|subscription|dashboard|admin|tenant|multi-tenant|platform|portal|billing)\b/i,
+    keywords:
+      /\b(saas|subscription|dashboard|admin|tenant|multi-tenant|platform|portal|billing)\b/i,
     defaultStack: ["Next.js", "Supabase", "Stripe", "Tailwind CSS"],
     projectType: "Web App",
   },
   education: {
-    keywords: /\b(learn|teach|course|student|school|classroom|quiz|lesson|lms|education|curriculum|tutor)\b/i,
+    keywords:
+      /\b(learn|teach|course|student|school|classroom|quiz|lesson|lms|education|curriculum|tutor)\b/i,
     defaultStack: ["Next.js", "Supabase", "Tailwind CSS"],
     projectType: "Web App",
   },
   healthcare: {
-    keywords: /\b(health|medical|patient|doctor|clinic|hospital|appointment|telehealth|hipaa|ehr)\b/i,
+    keywords:
+      /\b(health|medical|patient|doctor|clinic|hospital|appointment|telehealth|hipaa|ehr)\b/i,
     defaultStack: ["Next.js", "Supabase", "Tailwind CSS"],
     projectType: "Web App",
   },
@@ -99,12 +110,14 @@ const DOMAIN_SIGNALS: Record<string, { keywords: RegExp; defaultStack: string[];
     projectType: "Web App",
   },
   ai_ml: {
-    keywords: /\b(ai|ml|machine learning|model|inference|training|neural|llm|gpt|claude|embedding|vector)\b/i,
+    keywords:
+      /\b(ai|ml|machine learning|model|inference|training|neural|llm|gpt|claude|embedding|vector)\b/i,
     defaultStack: ["Next.js", "Supabase", "Vercel AI SDK", "Python"],
     projectType: "Web App",
   },
   game: {
-    keywords: /\b(game|player|score|level|character|multiplayer|gameplay|engine|godot|unity|sprite)\b/i,
+    keywords:
+      /\b(game|player|score|level|character|multiplayer|gameplay|engine|godot|unity|sprite)\b/i,
     defaultStack: ["Godot", "GDScript", "Supabase"],
     projectType: "Game",
   },
@@ -129,27 +142,84 @@ const DOMAIN_SIGNALS: Record<string, { keywords: RegExp; defaultStack: string[];
     projectType: "Web App",
   },
   climate: {
-    keywords: /\b(climate|carbon|emission|environment|sustain|green|eco|footprint|sensor|weather|renewable)\b/i,
+    keywords:
+      /\b(climate|carbon|emission|environment|sustain|green|eco|footprint|sensor|weather|renewable)\b/i,
     defaultStack: ["Next.js", "Supabase", "Chart.js", "Tailwind CSS"],
     projectType: "Web App",
   },
 };
 
 const FEATURE_SIGNALS: Array<{ pattern: RegExp; feature: string; description: string }> = [
-  { pattern: /\b(auth|login|sign.?up|register|password|oauth|sso)\b/i, feature: "Authentication", description: "User authentication with sign-up, login, and session management" },
-  { pattern: /\b(pay|stripe|checkout|billing|subscription|invoice)\b/i, feature: "Payments", description: "Payment processing and billing integration" },
-  { pattern: /\b(chat|message|real.?time|websocket|notification|push)\b/i, feature: "Real-time Messaging", description: "Real-time communication or notification system" },
-  { pattern: /\b(upload|file|image|media|storage|s3|blob)\b/i, feature: "File Management", description: "File upload, storage, and media management" },
-  { pattern: /\b(search|filter|sort|query|full.?text)\b/i, feature: "Search & Filtering", description: "Content search, filtering, and sorting capabilities" },
-  { pattern: /\b(dashboard|analytics|chart|graph|metric|report|visual)\b/i, feature: "Dashboard & Analytics", description: "Data visualization and analytics dashboard" },
-  { pattern: /\b(email|smtp|sendgrid|notification|alert)\b/i, feature: "Email Notifications", description: "Transactional and notification email system" },
-  { pattern: /\b(role|permission|admin|rbac|access.control)\b/i, feature: "Role-Based Access", description: "Role-based access control and permission management" },
-  { pattern: /\b(map|location|geo|gps|address|routing)\b/i, feature: "Geolocation", description: "Map integration, location services, or address handling" },
-  { pattern: /\b(calendar|schedule|booking|appointment|reservation|event)\b/i, feature: "Scheduling", description: "Calendar, booking, or appointment scheduling system" },
-  { pattern: /\b(export|import|csv|pdf|download|report)\b/i, feature: "Data Export", description: "Data export capabilities (CSV, PDF, reports)" },
-  { pattern: /\b(api|integration|webhook|third.?party|connect)\b/i, feature: "API Integrations", description: "Third-party API integrations and webhook handling" },
-  { pattern: /\b(track|monitor|log|audit|history|activity)\b/i, feature: "Activity Tracking", description: "User activity tracking and audit logging" },
-  { pattern: /\b(drag.?and.?drop|kanban|board|workflow|pipeline)\b/i, feature: "Workflow Management", description: "Visual workflow or kanban-style task management" },
+  {
+    pattern: /\b(auth|login|sign.?up|register|password|oauth|sso)\b/i,
+    feature: "Authentication",
+    description: "User authentication with sign-up, login, and session management",
+  },
+  {
+    pattern: /\b(pay|stripe|checkout|billing|subscription|invoice)\b/i,
+    feature: "Payments",
+    description: "Payment processing and billing integration",
+  },
+  {
+    pattern: /\b(chat|message|real.?time|websocket|notification|push)\b/i,
+    feature: "Real-time Messaging",
+    description: "Real-time communication or notification system",
+  },
+  {
+    pattern: /\b(upload|file|image|media|storage|s3|blob)\b/i,
+    feature: "File Management",
+    description: "File upload, storage, and media management",
+  },
+  {
+    pattern: /\b(search|filter|sort|query|full.?text)\b/i,
+    feature: "Search & Filtering",
+    description: "Content search, filtering, and sorting capabilities",
+  },
+  {
+    pattern: /\b(dashboard|analytics|chart|graph|metric|report|visual)\b/i,
+    feature: "Dashboard & Analytics",
+    description: "Data visualization and analytics dashboard",
+  },
+  {
+    pattern: /\b(email|smtp|sendgrid|notification|alert)\b/i,
+    feature: "Email Notifications",
+    description: "Transactional and notification email system",
+  },
+  {
+    pattern: /\b(role|permission|admin|rbac|access.control)\b/i,
+    feature: "Role-Based Access",
+    description: "Role-based access control and permission management",
+  },
+  {
+    pattern: /\b(map|location|geo|gps|address|routing)\b/i,
+    feature: "Geolocation",
+    description: "Map integration, location services, or address handling",
+  },
+  {
+    pattern: /\b(calendar|schedule|booking|appointment|reservation|event)\b/i,
+    feature: "Scheduling",
+    description: "Calendar, booking, or appointment scheduling system",
+  },
+  {
+    pattern: /\b(export|import|csv|pdf|download|report)\b/i,
+    feature: "Data Export",
+    description: "Data export capabilities (CSV, PDF, reports)",
+  },
+  {
+    pattern: /\b(api|integration|webhook|third.?party|connect)\b/i,
+    feature: "API Integrations",
+    description: "Third-party API integrations and webhook handling",
+  },
+  {
+    pattern: /\b(track|monitor|log|audit|history|activity)\b/i,
+    feature: "Activity Tracking",
+    description: "User activity tracking and audit logging",
+  },
+  {
+    pattern: /\b(drag.?and.?drop|kanban|board|workflow|pipeline)\b/i,
+    feature: "Workflow Management",
+    description: "Visual workflow or kanban-style task management",
+  },
 ];
 
 const PLATFORM_SIGNALS: Record<string, RegExp> = {
@@ -174,15 +244,9 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
     this.isYggdrasil = options?.yggdrasil ?? false;
   }
 
-  async classifyIntent(
-    message: string,
-    conversation: ConversationTurn[],
-  ): Promise<IntentSignal> {
+  async classifyIntent(message: string, conversation: ConversationTurn[]): Promise<IntentSignal> {
     const lower = message.toLowerCase();
-    const allText = [
-      ...conversation.map((t) => t.content),
-      message,
-    ].join(" ").toLowerCase();
+    const allText = [...conversation.map((t) => t.content), message].join(" ").toLowerCase();
 
     const domain = this.detectDomain(allText);
     const features = this.detectFeatures(allText);
@@ -216,7 +280,12 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
     const readiness = this.assessReadiness(allText, intent, context);
 
     if (!readiness.hasProjectType) {
-      gaps.push(this.createGap("Missing project type — what kind of thing is this (web app, mobile, API, CLI)?", true));
+      gaps.push(
+        this.createGap(
+          "Missing project type — what kind of thing is this (web app, mobile, API, CLI)?",
+          true,
+        ),
+      );
     }
     if (!readiness.hasPlatform) {
       gaps.push(this.createGap("Target platform not specified (web, mobile, desktop)", false));
@@ -229,7 +298,12 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
     }
 
     if (this.isYggdrasil && !readiness.hasMissionStatement(allText)) {
-      gaps.push(this.createGap("Yggdrasil seedling requires a mission statement — what social/educational/humanitarian problem does this solve?", true));
+      gaps.push(
+        this.createGap(
+          "Yggdrasil seedling requires a mission statement — what social/educational/humanitarian problem does this solve?",
+          true,
+        ),
+      );
     }
 
     return gaps;
@@ -302,7 +376,8 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
 
     const enrichment: KomatikEnrichmentData = {
       projectName: this.inferProjectName(message),
-      projectType: domain.id !== "unknown" ? DOMAIN_SIGNALS[domain.id]?.projectType ?? "Web App" : "Web App",
+      projectType:
+        domain.id !== "unknown" ? (DOMAIN_SIGNALS[domain.id]?.projectType ?? "Web App") : "Web App",
       detectedDomain: domain.id,
       domainConfidence: domain.confidence,
       techStack,
@@ -323,7 +398,9 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
         hasTechStack: techStack.length > 0,
         hasFeatures: features.length > 0,
         hasPlatform: true,
-        hasAudience: /\b(user|customer|client|student|teacher|admin|team|employee)\b/i.test(allText),
+        hasAudience: /\b(user|customer|client|student|teacher|admin|team|employee)\b/i.test(
+          allText,
+        ),
         estimatedReadiness: this.calculateReadiness(domain, features, techStack, assumptions),
       },
     };
@@ -486,17 +563,14 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
     return "low";
   }
 
-  private assessReadiness(
-    text: string,
-    intent: IntentSignal,
-    _context: ContextLayer[],
-  ) {
+  private assessReadiness(text: string, intent: IntentSignal, _context: ContextLayer[]) {
     return {
       hasProjectType: intent.domainHints.length > 0 && intent.domainHints[0] !== "unknown",
       hasPlatform: Object.values(PLATFORM_SIGNALS).some((p) => p.test(text)),
       hasFeatures: FEATURE_SIGNALS.some((f) => f.pattern.test(text)),
       hasAudience: /\b(user|customer|client|student|teacher|admin|team)\b/i.test(text),
-      hasMissionStatement: (t: string) => /\b(help|solve|improve|support|empower|enable|reduce|track)\b/i.test(t) && t.length > 50,
+      hasMissionStatement: (t: string) =>
+        /\b(help|solve|improve|support|empower|enable|reduce|track)\b/i.test(t) && t.length > 50,
     };
   }
 
@@ -528,15 +602,21 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
 
     parts.push(`[Original]: ${message}`);
     parts.push(`[Project]: ${enrichment.projectName} (${enrichment.projectType})`);
-    parts.push(`[Domain]: ${enrichment.detectedDomain} (confidence: ${(enrichment.domainConfidence * 100).toFixed(0)}%)`);
+    parts.push(
+      `[Domain]: ${enrichment.detectedDomain} (confidence: ${(enrichment.domainConfidence * 100).toFixed(0)}%)`,
+    );
     parts.push(`[Platform]: ${enrichment.constraints.platform}`);
 
     if (enrichment.constraints.isYggdrasil) {
-      parts.push(`[Yggdrasil]: Seedling mission — public repo, CC BY 4.0, 6-agent collective, 1% compute pledge`);
+      parts.push(
+        `[Yggdrasil]: Seedling mission — public repo, CC BY 4.0, 6-agent collective, 1% compute pledge`,
+      );
     }
 
     if (enrichment.techStack.length > 0) {
-      parts.push(`[Tech Stack]: ${enrichment.techStack.map((t) => `${t.name} (${t.category})`).join(", ")}`);
+      parts.push(
+        `[Tech Stack]: ${enrichment.techStack.map((t) => `${t.name} (${t.category})`).join(", ")}`,
+      );
     }
 
     if (enrichment.features.length > 0) {
@@ -561,7 +641,9 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
     }
 
     const r = enrichment.readinessSignals;
-    parts.push(`[Readiness]: ${(r.estimatedReadiness * 100).toFixed(0)}% — ${r.hasProjectType ? "✓" : "✗"} type, ${r.hasTechStack ? "✓" : "✗"} stack, ${r.hasFeatures ? "✓" : "✗"} features, ${r.hasPlatform ? "✓" : "✗"} platform, ${r.hasAudience ? "✓" : "✗"} audience`);
+    parts.push(
+      `[Readiness]: ${(r.estimatedReadiness * 100).toFixed(0)}% — ${r.hasProjectType ? "✓" : "✗"} type, ${r.hasTechStack ? "✓" : "✗"} stack, ${r.hasFeatures ? "✓" : "✗"} features, ${r.hasPlatform ? "✓" : "✗"} platform, ${r.hasAudience ? "✓" : "✗"} audience`,
+    );
 
     return parts.join("\n");
   }
@@ -605,7 +687,13 @@ ${assumptions.map((a) => `- ${a.claim} (${(a.confidence * 100).toFixed(0)}% conf
     const words = message
       .replace(/[^\w\s]/g, "")
       .split(/\s+/)
-      .filter((w) => w.length > 3 && !/^(want|need|build|create|make|that|this|with|from|have|some|like|would|could|should)$/i.test(w));
+      .filter(
+        (w) =>
+          w.length > 3 &&
+          !/^(want|need|build|create|make|that|this|with|from|have|some|like|would|could|should)$/i.test(
+            w,
+          ),
+      );
 
     return words.slice(0, 3).join("-").toLowerCase() || "untitled-project";
   }
@@ -656,7 +744,8 @@ ${assumptions.map((a) => `- ${a.claim} (${(a.confidence * 100).toFixed(0)}% conf
     }
     if (desc.includes("platform")) return "Assuming web platform (most common for new projects)";
     if (desc.includes("audience")) return "Assuming general end-users as target audience";
-    if (desc.includes("feature")) return "Features will be inferred from domain defaults and conversation refinement";
+    if (desc.includes("feature"))
+      return "Features will be inferred from domain defaults and conversation refinement";
     return `Assuming reasonable default for: ${gap.description}`;
   }
 

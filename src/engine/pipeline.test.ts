@@ -166,7 +166,9 @@ describe("Pipeline", () => {
       available: async () => true,
       gather: async () => {
         order.push("low");
-        return [{ source: "low-priority", priority: 10, timestamp: Date.now(), data: {}, summary: "low" }];
+        return [
+          { source: "low-priority", priority: 10, timestamp: Date.now(), data: {}, summary: "low" },
+        ];
       },
     };
 
@@ -176,7 +178,15 @@ describe("Pipeline", () => {
       available: async () => true,
       gather: async () => {
         order.push("high");
-        return [{ source: "high-priority", priority: 1, timestamp: Date.now(), data: {}, summary: "high" }];
+        return [
+          {
+            source: "high-priority",
+            priority: 1,
+            timestamp: Date.now(),
+            data: {},
+            summary: "high",
+          },
+        ];
       },
     };
 

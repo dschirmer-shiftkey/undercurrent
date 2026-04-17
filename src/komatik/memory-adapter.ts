@@ -21,9 +21,7 @@ export class KomatikMemoryAdapter implements ContextAdapter {
   private readonly userId: string;
   private readonly maxMemories: number;
 
-  constructor(
-    options: KomatikAdapterOptions & { maxMemories?: number },
-  ) {
+  constructor(options: KomatikAdapterOptions & { maxMemories?: number }) {
     this.client = options.client;
     this.userId = options.userId;
     this.maxMemories = options.maxMemories ?? 30;
@@ -48,9 +46,7 @@ export class KomatikMemoryAdapter implements ContextAdapter {
     const memories = data as unknown as SessionMemory[];
 
     const now = Date.now();
-    const active = memories.filter(
-      (m) => !m.expires_at || new Date(m.expires_at).getTime() > now,
-    );
+    const active = memories.filter((m) => !m.expires_at || new Date(m.expires_at).getTime() > now);
 
     if (active.length === 0) {
       return [];
@@ -91,9 +87,10 @@ export class KomatikMemoryAdapter implements ContextAdapter {
       parts.push(`Learned: ${learned.map((m) => m.content).join("; ")}`);
     }
 
-    const summary = parts.length > 0
-      ? `Session memory (${active.length} items): ${parts.join(". ")}`
-      : `Session memory: ${active.length} items stored`;
+    const summary =
+      parts.length > 0
+        ? `Session memory (${active.length} items): ${parts.join(". ")}`
+        : `Session memory: ${active.length} items stored`;
 
     return [
       {
@@ -102,9 +99,7 @@ export class KomatikMemoryAdapter implements ContextAdapter {
         timestamp: Date.now(),
         data: {
           memories: active,
-          countByType: Object.fromEntries(
-            [...byType.entries()].map(([k, v]) => [k, v.length]),
-          ),
+          countByType: Object.fromEntries([...byType.entries()].map(([k, v]) => [k, v.length])),
         },
         summary,
       },
