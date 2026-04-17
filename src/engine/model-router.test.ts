@@ -70,7 +70,10 @@ describe("TaskDomainClassifier", () => {
   });
 
   it("uses rawFragments to classify when domainHints are sparse", () => {
-    const intent = makeIntent({ action: "fix", rawFragments: ["null reference exception in production"] });
+    const intent = makeIntent({
+      action: "fix",
+      rawFragments: ["null reference exception in production"],
+    });
     expect(classifier.classify(intent)).toBe("debugging");
   });
 
@@ -132,14 +135,44 @@ describe("ModelScorer", () => {
     );
 
     const usageByModel = new Map<string, UsageStats>([
-      ["gemini-pro", { model: "gemini-pro", provider: "google", successRate: 0.95, avgLatencyMs: 400, dataPoints: 30 }],
-      ["claude-4", { model: "claude-4", provider: "anthropic", successRate: 0.80, avgLatencyMs: 350, dataPoints: 30 }],
-      ["gpt-5", { model: "gpt-5", provider: "openai", successRate: 0.85, avgLatencyMs: 300, dataPoints: 30 }],
+      [
+        "gemini-pro",
+        {
+          model: "gemini-pro",
+          provider: "google",
+          successRate: 0.95,
+          avgLatencyMs: 400,
+          dataPoints: 30,
+        },
+      ],
+      [
+        "claude-4",
+        {
+          model: "claude-4",
+          provider: "anthropic",
+          successRate: 0.8,
+          avgLatencyMs: 350,
+          dataPoints: 30,
+        },
+      ],
+      [
+        "gpt-5",
+        {
+          model: "gpt-5",
+          provider: "openai",
+          successRate: 0.85,
+          avgLatencyMs: 300,
+          dataPoints: 30,
+        },
+      ],
     ]);
 
     const outcomesByPlatform = new Map<string, OutcomeStats>([
-      ["google", { platform: "google", acceptanceRate: 0.90, correctionRate: 0.05, dataPoints: 20 }],
-      ["anthropic", { platform: "anthropic", acceptanceRate: 0.70, correctionRate: 0.15, dataPoints: 20 }],
+      ["google", { platform: "google", acceptanceRate: 0.9, correctionRate: 0.05, dataPoints: 20 }],
+      [
+        "anthropic",
+        { platform: "anthropic", acceptanceRate: 0.7, correctionRate: 0.15, dataPoints: 20 },
+      ],
     ]);
 
     const data = makeScoringData({ availableModels: models, usageByModel, outcomesByPlatform });
@@ -151,19 +184,40 @@ describe("ModelScorer", () => {
   });
 
   it("reduces affinity weight when data points exceed threshold", () => {
-    const models = makeModels(
-      ["google", "gemini-pro", 500],
-      ["anthropic", "claude-4", 400],
-    );
+    const models = makeModels(["google", "gemini-pro", 500], ["anthropic", "claude-4", 400]);
 
     const usageByModel = new Map<string, UsageStats>([
-      ["gemini-pro", { model: "gemini-pro", provider: "google", successRate: 0.95, avgLatencyMs: 400, dataPoints: 40 }],
-      ["claude-4", { model: "claude-4", provider: "anthropic", successRate: 0.70, avgLatencyMs: 350, dataPoints: 40 }],
+      [
+        "gemini-pro",
+        {
+          model: "gemini-pro",
+          provider: "google",
+          successRate: 0.95,
+          avgLatencyMs: 400,
+          dataPoints: 40,
+        },
+      ],
+      [
+        "claude-4",
+        {
+          model: "claude-4",
+          provider: "anthropic",
+          successRate: 0.7,
+          avgLatencyMs: 350,
+          dataPoints: 40,
+        },
+      ],
     ]);
 
     const outcomesByPlatform = new Map<string, OutcomeStats>([
-      ["google", { platform: "google", acceptanceRate: 0.95, correctionRate: 0.02, dataPoints: 30 }],
-      ["anthropic", { platform: "anthropic", acceptanceRate: 0.60, correctionRate: 0.20, dataPoints: 30 }],
+      [
+        "google",
+        { platform: "google", acceptanceRate: 0.95, correctionRate: 0.02, dataPoints: 30 },
+      ],
+      [
+        "anthropic",
+        { platform: "anthropic", acceptanceRate: 0.6, correctionRate: 0.2, dataPoints: 30 },
+      ],
     ]);
 
     const data = makeScoringData({ availableModels: models, usageByModel, outcomesByPlatform });
@@ -180,14 +234,32 @@ describe("ModelScorer", () => {
     const dataLow = makeScoringData({
       availableModels: models,
       usageByModel: new Map([
-        ["claude-4", { model: "claude-4", provider: "anthropic", successRate: 0.9, avgLatencyMs: 400, dataPoints: 3 }],
+        [
+          "claude-4",
+          {
+            model: "claude-4",
+            provider: "anthropic",
+            successRate: 0.9,
+            avgLatencyMs: 400,
+            dataPoints: 3,
+          },
+        ],
       ]),
     });
 
     const dataHigh = makeScoringData({
       availableModels: models,
       usageByModel: new Map([
-        ["claude-4", { model: "claude-4", provider: "anthropic", successRate: 0.9, avgLatencyMs: 400, dataPoints: 80 }],
+        [
+          "claude-4",
+          {
+            model: "claude-4",
+            provider: "anthropic",
+            successRate: 0.9,
+            avgLatencyMs: 400,
+            dataPoints: 80,
+          },
+        ],
       ]),
     });
 
@@ -200,7 +272,16 @@ describe("ModelScorer", () => {
   it("includes stats on the recommended model", () => {
     const models = makeModels(["anthropic", "claude-4", 350]);
     const usageByModel = new Map<string, UsageStats>([
-      ["claude-4", { model: "claude-4", provider: "anthropic", successRate: 0.88, avgLatencyMs: 350, dataPoints: 25 }],
+      [
+        "claude-4",
+        {
+          model: "claude-4",
+          provider: "anthropic",
+          successRate: 0.88,
+          avgLatencyMs: 350,
+          dataPoints: 25,
+        },
+      ],
     ]);
 
     const data = makeScoringData({ availableModels: models, usageByModel });
@@ -219,10 +300,7 @@ describe("ModelRouter", () => {
 
   it("classifies domain and recommends in one call", () => {
     const intent = makeIntent({ action: "build", domainHints: ["react", "typescript"] });
-    const models = makeModels(
-      ["anthropic", "claude-4", 400],
-      ["openai", "gpt-5", 450],
-    );
+    const models = makeModels(["anthropic", "claude-4", 400], ["openai", "gpt-5", 450]);
     const data = makeScoringData({ availableModels: models });
 
     const rec = router.recommend(intent, data);
@@ -237,17 +315,37 @@ describe("ModelRouter", () => {
   });
 
   it("accepts custom scoring weights", () => {
-    const customRouter = new ModelRouter({ latency: 0.8, affinity: 0.05, successRate: 0.1, acceptanceRate: 0.05 });
+    const customRouter = new ModelRouter({
+      latency: 0.8,
+      affinity: 0.05,
+      successRate: 0.1,
+      acceptanceRate: 0.05,
+    });
     const intent = makeIntent({ action: "build", domainHints: ["code"] });
 
-    const models = makeModels(
-      ["google", "gemini-pro", 200],
-      ["anthropic", "claude-4", 800],
-    );
+    const models = makeModels(["google", "gemini-pro", 200], ["anthropic", "claude-4", 800]);
 
     const usageByModel = new Map<string, UsageStats>([
-      ["gemini-pro", { model: "gemini-pro", provider: "google", successRate: 0.80, avgLatencyMs: 200, dataPoints: 20 }],
-      ["claude-4", { model: "claude-4", provider: "anthropic", successRate: 0.85, avgLatencyMs: 800, dataPoints: 20 }],
+      [
+        "gemini-pro",
+        {
+          model: "gemini-pro",
+          provider: "google",
+          successRate: 0.8,
+          avgLatencyMs: 200,
+          dataPoints: 20,
+        },
+      ],
+      [
+        "claude-4",
+        {
+          model: "claude-4",
+          provider: "anthropic",
+          successRate: 0.85,
+          avgLatencyMs: 800,
+          dataPoints: 20,
+        },
+      ],
     ]);
 
     const data = makeScoringData({ availableModels: models, usageByModel });

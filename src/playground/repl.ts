@@ -72,7 +72,9 @@ async function handleReplay(filePath: string): Promise<void> {
 
   for (const entry of entries) {
     const preview = entry.rawMessage.slice(0, 80).replace(/\n/g, " ");
-    console.log(`\x1b[1m\x1b[33m── Message ${entry.index + 1}: \x1b[0m${preview}${entry.rawMessage.length > 80 ? "..." : ""}`);
+    console.log(
+      `\x1b[1m\x1b[33m── Message ${entry.index + 1}: \x1b[0m${preview}${entry.rawMessage.length > 80 ? "..." : ""}`,
+    );
 
     const result = await uc.enrich({
       message: entry.rawMessage,

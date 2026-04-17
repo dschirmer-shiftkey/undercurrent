@@ -123,11 +123,7 @@ export class FilesystemAdapter implements ContextAdapter {
     return entries.slice(0, this.maxFiles * 10);
   }
 
-  private async walkDir(
-    dir: string,
-    entries: FileEntry[],
-    depth: number,
-  ): Promise<void> {
+  private async walkDir(dir: string, entries: FileEntry[], depth: number): Promise<void> {
     if (depth > 6) return;
 
     let items: string[];
@@ -175,15 +171,10 @@ export class FilesystemAdapter implements ContextAdapter {
   }
 
   private async getRecentlyModified(files: FileEntry[]): Promise<FileEntry[]> {
-    return [...files]
-      .sort((a, b) => b.modifiedAt - a.modifiedAt)
-      .slice(0, 10);
+    return [...files].sort((a, b) => b.modifiedAt - a.modifiedAt).slice(0, 10);
   }
 
-  private findRelevantFiles(
-    files: FileEntry[],
-    input: AdapterInput,
-  ): FileEntry[] {
+  private findRelevantFiles(files: FileEntry[], input: AdapterInput): FileEntry[] {
     const messageWords = new Set(
       input.message
         .toLowerCase()
@@ -191,9 +182,7 @@ export class FilesystemAdapter implements ContextAdapter {
         .filter((w) => w.length > 2),
     );
 
-    const domainHints = new Set(
-      input.intent.domainHints.map((h) => h.toLowerCase()),
-    );
+    const domainHints = new Set(input.intent.domainHints.map((h) => h.toLowerCase()));
 
     return files
       .map((file) => {
@@ -207,8 +196,7 @@ export class FilesystemAdapter implements ContextAdapter {
           if (pathLower.includes(hint)) score += 3;
         }
 
-        const hoursSinceModified =
-          (Date.now() - file.modifiedAt) / (1000 * 60 * 60);
+        const hoursSinceModified = (Date.now() - file.modifiedAt) / (1000 * 60 * 60);
         if (hoursSinceModified < 1) score += 3;
         else if (hoursSinceModified < 24) score += 1;
 

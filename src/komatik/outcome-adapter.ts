@@ -18,9 +18,7 @@ export class KomatikOutcomeAdapter implements ContextAdapter {
   private readonly userId: string;
   private readonly maxOutcomes: number;
 
-  constructor(
-    options: KomatikAdapterOptions & { maxOutcomes?: number },
-  ) {
+  constructor(options: KomatikAdapterOptions & { maxOutcomes?: number }) {
     this.client = options.client;
     this.userId = options.userId;
     this.maxOutcomes = options.maxOutcomes ?? 20;
@@ -54,10 +52,7 @@ export class KomatikOutcomeAdapter implements ContextAdapter {
       if (o.assumptions_corrected && o.assumptions_corrected.length > 0) {
         totalCorrected += o.assumptions_corrected.length;
         for (const correction of o.assumptions_corrected) {
-          correctionPatterns.set(
-            correction,
-            (correctionPatterns.get(correction) ?? 0) + 1,
-          );
+          correctionPatterns.set(correction, (correctionPatterns.get(correction) ?? 0) + 1);
         }
       }
     }

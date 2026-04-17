@@ -72,9 +72,10 @@ export class KomatikPreferenceAdapter implements ContextAdapter {
       parts.push(`Never assume: ${p.never_assume.join("; ")}`);
     }
 
-    const summary = parts.length > 0
-      ? `User preferences: ${parts.join(". ")}`
-      : "User preferences: defaults (no customization)";
+    const summary =
+      parts.length > 0
+        ? `User preferences: ${parts.join(". ")}`
+        : "User preferences: defaults (no customization)";
 
     layers.push({
       source: this.name,

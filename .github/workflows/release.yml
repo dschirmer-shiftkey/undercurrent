@@ -1,33 +1,25 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [main, dev]
-  pull_request:
-    branches: [main, dev]
+    tags:
+      - "v*"
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  ci:
-    name: Node ${{ matrix.node-version }}
+  publish:
+    name: Publish to npm
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [20, 22]
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
+          registry-url: https://registry.npmjs.org
           cache: npm
 
       - name: Install dependencies
@@ -42,5 +34,7 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Verify package
-        run: npm pack --dry-run
+      - name: Publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -41,10 +41,7 @@ export class KomatikIdentityAdapter implements ContextAdapter {
     const layers: ContextLayer[] = [];
 
     const rolePart = p.primary_role ? ` (${p.primary_role})` : "";
-    const productsPart =
-      p.products_used.length > 0
-        ? ` — uses ${p.products_used.join(", ")}`
-        : "";
+    const productsPart = p.products_used.length > 0 ? ` — uses ${p.products_used.join(", ")}` : "";
     const onboardingPart = p.onboarding_complete
       ? "Onboarding complete."
       : "Onboarding not yet complete.";

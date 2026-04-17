@@ -3,13 +3,19 @@ import { createUndercurrentMcpServer } from "./server.js";
 import { createMockClient } from "../komatik/testing.js";
 
 type RegisteredTool = {
-  handler: (args: Record<string, unknown>, extra: unknown) => Promise<{ content: Array<{ text: string }> }>;
+  handler: (
+    args: Record<string, unknown>,
+    extra: unknown,
+  ) => Promise<{ content: Array<{ text: string }> }>;
 };
 type RegisteredResource = {
   readCallback: (uri: URL, extra: unknown) => Promise<{ contents: Array<{ text: string }> }>;
 };
 type RegisteredPrompt = {
-  callback: (args: Record<string, unknown>, extra: unknown) => Promise<{ messages: Array<{ role: string; content: { text: string } }> }>;
+  callback: (
+    args: Record<string, unknown>,
+    extra: unknown,
+  ) => Promise<{ messages: Array<{ role: string; content: { text: string } }> }>;
 };
 
 interface McpServerInternals {
@@ -167,7 +173,10 @@ describe("get_context tool", () => {
     const result = await tool.handler({}, EXTRA);
 
     const text = result.content[0]!.text;
-    const parsed = JSON.parse(text) as { userId: string; layers: Array<{ source: string; summary: string }> };
+    const parsed = JSON.parse(text) as {
+      userId: string;
+      layers: Array<{ source: string; summary: string }>;
+    };
 
     expect(parsed.userId).toBe("user-1");
     expect(parsed.layers.length).toBeGreaterThan(0);

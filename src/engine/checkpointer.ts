@@ -8,7 +8,7 @@ import type {
   SessionState,
   SessionWriter,
 } from "../types.js";
-import { Compactor } from "./compactor.js";
+import type { Compactor } from "./compactor.js";
 import type { SessionMonitor } from "./session-monitor.js";
 
 export class Checkpointer {
@@ -16,20 +16,13 @@ export class Checkpointer {
   private readonly compactor: Compactor;
   private readonly userId: string;
 
-  constructor(options: {
-    writer: SessionWriter;
-    compactor: Compactor;
-    userId: string;
-  }) {
+  constructor(options: { writer: SessionWriter; compactor: Compactor; userId: string }) {
     this.writer = options.writer;
     this.compactor = options.compactor;
     this.userId = options.userId;
   }
 
-  async checkpoint(
-    monitor: SessionMonitor,
-    _conversation: ConversationTurn[],
-  ): Promise<void> {
+  async checkpoint(monitor: SessionMonitor, _conversation: ConversationTurn[]): Promise<void> {
     const state = monitor.getState();
     const memories = this.buildMemories(state);
 
@@ -93,7 +86,7 @@ export class Checkpointer {
       unresolvedItems: compaction.unresolved,
       decisions: state.decisionsThisSession.map((d, i) => ({
         summary: d,
-        madeAt: state.startedAt + (i * 60_000),
+        madeAt: state.startedAt + i * 60_000,
         turnIndex: i,
       })),
       keyTerminology: compaction.terminology,
@@ -272,10 +265,7 @@ export class Checkpointer {
   }
 
   private async expireSupersededMemories(state: SessionState): Promise<void> {
-    const keysToExpire = [
-      `active-work:${state.sessionId}`,
-      `unresolved:${state.sessionId}`,
-    ];
+    const keysToExpire = [`active-work:${state.sessionId}`, `unresolved:${state.sessionId}`];
 
     try {
       await this.writer.expireMemories(this.userId, keysToExpire);
@@ -284,13 +274,12 @@ export class Checkpointer {
     }
   }
 
-  private inferCompletedWork(
-    state: SessionState,
-    compaction: CompactionResult,
-  ): string[] {
+  private inferCompletedWork(state: SessionState, compaction: CompactionResult): string[] {
     const completed: string[] = [];
     if (state.messageCount > 10 && compaction.decisions.length > 0) {
-      completed.push(`Processed ${state.messageCount} messages with ${compaction.decisions.length} decision(s)`);
+      completed.push(
+        `Processed ${state.messageCount} messages with ${compaction.decisions.length} decision(s)`,
+      );
     }
     return completed;
   }

@@ -22,7 +22,9 @@ export interface KomatikFilterBuilder {
   limit(count: number): KomatikFilterBuilder;
   single(): PromiseLike<KomatikQueryResult<Record<string, unknown>>>;
   then<TResult1 = KomatikQueryResult<Record<string, unknown>[]>, TResult2 = never>(
-    onfulfilled?: ((value: KomatikQueryResult<Record<string, unknown>[]>) => TResult1 | PromiseLike<TResult1>) | null,
+    onfulfilled?:
+      | ((value: KomatikQueryResult<Record<string, unknown>[]>) => TResult1 | PromiseLike<TResult1>)
+      | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): PromiseLike<TResult1 | TResult2>;
 }

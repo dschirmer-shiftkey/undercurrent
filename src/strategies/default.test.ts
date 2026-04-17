@@ -22,12 +22,18 @@ describe("DefaultStrategy", () => {
     });
 
     it("classifies design requests", async () => {
-      const intent = await strategy.classifyIntent("design the architecture for the new caching layer", []);
+      const intent = await strategy.classifyIntent(
+        "design the architecture for the new caching layer",
+        [],
+      );
       expect(intent.action).toBe("design");
     });
 
     it("classifies vent/frustration", async () => {
-      const intent = await strategy.classifyIntent("ugh this is so frustrating and terrible, I hate it", []);
+      const intent = await strategy.classifyIntent(
+        "ugh this is so frustrating and terrible, I hate it",
+        [],
+      );
       expect(intent.action).toBe("vent");
     });
 
@@ -54,7 +60,10 @@ describe("DefaultStrategy", () => {
     });
 
     it("extracts code fragments from backticks", async () => {
-      const intent = await strategy.classifyIntent("the `UserService` class is missing a `validate` method", []);
+      const intent = await strategy.classifyIntent(
+        "the `UserService` class is missing a `validate` method",
+        [],
+      );
       expect(intent.rawFragments).toContain("UserService");
       expect(intent.rawFragments).toContain("validate");
     });
@@ -63,7 +72,10 @@ describe("DefaultStrategy", () => {
       const frustrated = await strategy.classifyIntent("ugh this is terrible!!", []);
       expect(frustrated.emotionalLoad).toBe("frustrated");
 
-      const uncertain = await strategy.classifyIntent("maybe we should try a different approach, not sure", []);
+      const uncertain = await strategy.classifyIntent(
+        "maybe we should try a different approach, not sure",
+        [],
+      );
       expect(uncertain.emotionalLoad).toBe("uncertain");
 
       const neutral = await strategy.classifyIntent("update the readme with the new api docs", []);
@@ -74,7 +86,10 @@ describe("DefaultStrategy", () => {
       const atomic = await strategy.classifyIntent("fix config.ts", []);
       expect(atomic.scope).toBe("atomic");
 
-      const product = await strategy.classifyIntent("we need a new tool for managing the application", []);
+      const product = await strategy.classifyIntent(
+        "we need a new tool for managing the application",
+        [],
+      );
       expect(product.scope).toBe("product");
     });
   });
@@ -115,7 +130,11 @@ describe("DefaultStrategy", () => {
         domainHints: [],
       };
 
-      const gaps = await strategy.analyzeGaps(intent, [], "I need to decide on the caching approach");
+      const gaps = await strategy.analyzeGaps(
+        intent,
+        [],
+        "I need to decide on the caching approach",
+      );
       const decisionGap = gaps.find((g) => g.description.includes("options"));
       expect(decisionGap).toBeDefined();
       expect(decisionGap!.critical).toBe(true);
@@ -186,7 +205,13 @@ describe("DefaultStrategy", () => {
   describe("compose", () => {
     it("produces structured enriched output", async () => {
       const intent = await strategy.classifyIntent("build a new api endpoint for users", []);
-      const result = await strategy.compose("build a new api endpoint for users", intent, [], [], []);
+      const result = await strategy.compose(
+        "build a new api endpoint for users",
+        intent,
+        [],
+        [],
+        [],
+      );
 
       expect(result).toContain("[Original]:");
       expect(result).toContain("[Intent]:");
