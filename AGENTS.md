@@ -590,10 +590,12 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 
 **Build & test**:
 ```bash
-npm run build      # tsc → dist/
+npm run build       # tsc → dist/
 npm run typecheck   # tsc --noEmit
 npm test            # vitest run — 108 tests in 14 files
 npm run start:mcp   # Run the MCP server (requires env vars)
+npm run playground  # Interactive REPL — live pipeline testing (tsx)
+npm run replay      # Batch transcript replay with reports (tsx)
 ```
 
 **Source layout**:
@@ -625,6 +627,11 @@ src/
 │   ├── default.ts           # Heuristic (no LLM, deterministic) — reference impl
 │   ├── komatik-pipeline.ts  # Domain-specific (Komatik marketplace enrichment)
 │   └── platform-composer.ts # Platform-aware output formatting (Cursor, Claude, ChatGPT, API, MCP)
+├── playground/              # Live pipeline test harness (excluded from build, runs via tsx)
+│   ├── transcript-parser.ts # Parse .jsonl agent transcripts → pipeline-ready input
+│   ├── formatter.ts         # Colorized stage-by-stage terminal output
+│   ├── repl.ts              # Interactive REPL (npm run playground)
+│   └── replay.ts            # Batch transcript replay with reports (npm run replay)
 └── transports/
     └── middleware.ts         # Express middleware + Fetch API handler
 ```
@@ -674,6 +681,12 @@ src/
 - Score → depth mapping: ≤1 none, 2-3 light, 4-6 standard, ≥7 deep
 - Frustrated/uncertain users get escalated depth automatically
 - Low-confidence classifications trigger deeper enrichment
+
+**Playground / test harness** (`src/playground/`):
+- `npm run playground` — interactive REPL: type messages, see stage-by-stage enrichment (intent, depth, context, gaps, assumptions, enriched output). Commands: `/platform <target>`, `/debug`, `/reset`, `/replay <path>`, `/history`.
+- `npm run replay -- <path.jsonl>` — batch-process Cursor agent transcripts (.jsonl). Per-message table, aggregate stats (depth distribution, intent actions, domain hints, gap types), interesting-case analysis. `--output report.json` for machine-readable output, `--verbose` for full detail.
+- Both tools wire real pipeline with generic adapters (Conversation, Git, Filesystem). No mocks, no Komatik adapters.
+- Excluded from tsconfig build. Runs via `tsx` (devDep).
 
 **Critical invariants**:
 - Zero external runtime dependencies in core — only `node:*` built-ins (`src/mcp/` has `@modelcontextprotocol/sdk` + `zod`)

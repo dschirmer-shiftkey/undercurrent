@@ -130,6 +130,7 @@ export interface EnrichmentMetadata {
   adapterTimings: Record<string, number>;
   strategyUsed: string;
   targetPlatform: TargetPlatform;
+  modelRecommendation?: ModelRecommendation;
 }
 
 // ─── Platform Targeting ─────────────────────────────────────────────────────
@@ -155,6 +156,8 @@ export interface UndercurrentConfig {
   targetPlatform?: TargetPlatform;
   onEnrichment?: (result: EnrichedPrompt) => void;
   debug?: boolean;
+  sessionMonitor?: SessionMonitorConfig;
+  modelRouter?: ModelRouterConfig;
 }
 
 // ─── Adapter Interface ──────────────────────────────────────────────────────
@@ -226,4 +229,175 @@ export interface PipelineHooks {
   afterAnalyze?: (gaps: Gap[]) => void;
   beforeCompose?: (data: { message: string; intent: IntentSignal; context: ContextLayer[] }) => void;
   afterCompose?: (enriched: EnrichedPrompt) => void;
+}
+
+// ─── Session Lifecycle ──────────────────────────────────────────────────────
+// Types for automatic session health tracking, context compaction,
+// checkpoint persistence, and cross-session handoff. These enable the
+// pipeline to invisibly manage context degradation so the user never
+// has to manually brief/cleanup/resume.
+
+export type SessionHealth =
+  | "cold-start"
+  | "healthy"
+  | "warm"
+  | "degrading"
+  | "critical";
+
+export interface SessionState {
+  sessionId: string;
+  startedAt: number;
+  messageCount: number;
+  estimatedTokens: number;
+  tokenBudget: number;
+  topicShiftCount: number;
+  health: SessionHealth;
+  lastCheckpoint: number | null;
+  decisionsThisSession: string[];
+  activeWorkItems: string[];
+  unresolvedItems: string[];
+}
+
+export interface CompactionResult {
+  summary: string;
+  decisions: string[];
+  activeWork: string[];
+  unresolved: string[];
+  terminology: Record<string, string>;
+  recentExchanges: ConversationTurn[];
+  estimatedTokensSaved: number;
+}
+
+export interface DecisionRecord {
+  summary: string;
+  madeAt: number;
+  turnIndex: number;
+}
+
+export interface HandoffArtifact {
+  sessionId: string;
+  createdAt: number;
+  summary: string;
+  completedWork: string[];
+  activeWork: string[];
+  unresolvedItems: string[];
+  decisions: DecisionRecord[];
+  keyTerminology: Record<string, string>;
+  nextSteps: string[];
+  contextLayers: ContextLayer[];
+}
+
+export interface SessionMemoryInput {
+  memoryType: "decision" | "unresolved" | "active-work" | "preference-learned" | "correction";
+  content: string;
+  contextKey: string | null;
+  relevanceScore: number;
+  expiresAt: string | null;
+}
+
+export interface SessionSnapshot {
+  sessionId: string;
+  createdAt: number;
+  state: SessionState;
+  compaction: CompactionResult | null;
+  handoff: HandoffArtifact | null;
+}
+
+export interface SessionWriter {
+  writeMemories(userId: string, memories: SessionMemoryInput[]): Promise<void>;
+  writeSnapshot(snapshot: SessionSnapshot): Promise<void>;
+  expireMemories(userId: string, contextKeys: string[]): Promise<void>;
+  getLatestSnapshot(userId: string): Promise<SessionSnapshot | null>;
+}
+
+export interface SessionMonitorConfig {
+  userId?: string;
+  tokenBudget?: number;
+  checkpointInterval?: number;
+  compactionThreshold?: number;
+  writer?: SessionWriter;
+  compactorLlmCall?: (prompt: string) => Promise<string>;
+}
+
+// ─── Model Routing ──────────────────────────────────────────────────────────
+// Intelligent per-user model selection based on task domain classification,
+// historical success rates (llm_usage), and enrichment feedback
+// (enrichment_outcomes). Komatik-internal first — the model roster comes
+// from model_availability, and the Komatik LLM gateway is the caller.
+
+export type TaskDomain =
+  | "coding"
+  | "creative"
+  | "analysis"
+  | "planning"
+  | "debugging"
+  | "conversation";
+
+export type ModelProvider =
+  | "anthropic"
+  | "openai"
+  | "google"
+  | "meta"
+  | "custom";
+
+export interface ModelOption {
+  provider: ModelProvider;
+  model: string;
+  score: number;
+  stats: {
+    successRate: number | null;
+    acceptanceRate: number | null;
+    avgLatencyMs: number | null;
+    dataPoints: number;
+  };
+}
+
+export interface ModelRecommendation {
+  domain: TaskDomain;
+  recommended: ModelOption;
+  alternatives: ModelOption[];
+  confidence: number;
+  reasoning: string;
+  basedOnDataPoints: number;
+}
+
+export interface ScoringWeights {
+  successRate: number;
+  acceptanceRate: number;
+  latency: number;
+  affinity: number;
+}
+
+export interface ModelCallerInput {
+  model: string;
+  provider: ModelProvider;
+  messages: ConversationTurn[];
+  enrichedSystemPrompt: string;
+}
+
+export interface ModelCallerOutput {
+  content: string;
+  model: string;
+  provider: ModelProvider;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+}
+
+export type ModelCallerFn = (input: ModelCallerInput) => Promise<ModelCallerOutput>;
+
+export interface ModelRouterConfig {
+  enabled: boolean;
+  caller: ModelCallerFn;
+  userId: string;
+  client: import("./komatik/client.js").KomatikDataClient;
+  defaultProvider?: ModelProvider;
+  scoringWeights?: Partial<ScoringWeights>;
+  onModelSelected?: (rec: ModelRecommendation) => void;
+}
+
+export interface ProcessResult {
+  enrichedPrompt: EnrichedPrompt;
+  modelRecommendation: ModelRecommendation;
+  modelResponse: ModelCallerOutput;
 }

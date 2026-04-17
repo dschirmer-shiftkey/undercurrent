@@ -40,7 +40,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "start:mcp": "node dist/mcp/index.js"
+    "start:mcp": "node dist/mcp/index.js",
+    "playground": "tsx src/playground/repl.ts",
+    "replay": "tsx src/playground/replay.ts"
   },
   "keywords": [
     "ai",
@@ -55,6 +57,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"
   },

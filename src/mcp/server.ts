@@ -160,9 +160,9 @@ function registerTools(server: McpServer, undercurrent: Undercurrent): void {
     {
       title: "Get User Context",
       description:
-        "Fetch the authenticated user's full Komatik context from all 4 adapters " +
-        "(identity, history, projects, marketplace) without running the enrichment " +
-        "pipeline. Returns raw context layers.",
+        "Fetch the authenticated user's full Komatik context from all 7 adapters " +
+        "(identity, preferences, memory, history, outcomes, projects, marketplace) " +
+        "without running the enrichment pipeline. Returns raw context layers.",
     },
     async () => {
       const adapters = undercurrent.adapters;
