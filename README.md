@@ -324,13 +324,17 @@ undercurrent/
 │   ├── index.ts                      # Public API — Undercurrent class + re-exports
 │   ├── types.ts                      # The protocol — all interfaces and types
 │   ├── engine/
-│   │   └── pipeline.ts               # 4-stage pipeline with graduated scope calibration
+│   │   ├── pipeline.ts               # 4-stage pipeline with graduated scope calibration
+│   │   ├── session-monitor.ts        # Session health tracking (cold-start → critical)
+│   │   ├── compactor.ts              # Context distillation (heuristic + LLM)
+│   │   ├── checkpointer.ts           # Persistence via pluggable SessionWriter
+│   │   └── model-router.ts           # TaskDomainClassifier, ModelScorer, ModelRouter
 │   ├── adapters/
 │   │   ├── conversation.ts           # Decisions, topics, terminology from chat history
 │   │   ├── filesystem.ts             # Project structure, recent files, relevance-scored content
 │   │   └── git.ts                    # Branch, commits, diff, working tree state
 │   ├── komatik/                      # Komatik identity layer (@komatik/undercurrent/komatik)
-│   │   ├── client.ts                 # KomatikDataClient interface (Supabase-compatible)
+│   │   ├── client.ts                 # KomatikDataClient + KomatikWriteClient interfaces
 │   │   ├── types.ts                  # Row types for all ecosystem Supabase tables
 │   │   ├── identity-adapter.ts       # komatik_profiles → who is this user
 │   │   ├── preference-adapter.ts     # user_preferences → tone, style, code conventions
@@ -339,6 +343,8 @@ undercurrent/
 │   │   ├── outcome-adapter.ts        # enrichment_outcomes → feedback loop
 │   │   ├── project-adapter.ts        # triage_intakes + floe_scans → active projects
 │   │   ├── marketplace-adapter.ts    # forge_usage + forge_tools → marketplace activity
+│   │   ├── session-writer.ts         # KomatikSessionWriter → session_memories persistence
+│   │   ├── model-usage-adapter.ts    # model_availability + llm_usage + enrichment_outcomes
 │   │   └── testing.ts                # createMockClient() for tests
 │   ├── strategies/
 │   │   ├── default.ts                # Heuristic (no LLM, deterministic) — reference impl
@@ -350,9 +356,16 @@ undercurrent/
 │   │   └── index.ts                  # Bin entry (undercurrent-mcp)
 │   └── transports/
 │       └── middleware.ts             # Express middleware + Fetch API handler
-├── .github/workflows/ci.yml         # CI: typecheck + test on Node 20 & 22
+├── .github/
+│   ├── workflows/ci.yml             # CI: typecheck, build, test on Node 20 & 22
+│   ├── workflows/release.yml        # Publish to npm on tag push
+│   └── dependabot.yml               # Automated dependency updates
 ├── package.json
 ├── tsconfig.json
+├── vitest.config.ts
+├── eslint.config.js
+├── CHANGELOG.md
+├── LICENSE
 └── README.md
 ```
 
@@ -362,7 +375,7 @@ undercurrent/
 npm install          # Install dependencies
 npm run build        # TypeScript → dist/
 npm run typecheck    # Type-check only (no emit)
-npm test             # 108 tests across 14 files
+npm test             # 296 tests across 27 files
 npm run dev          # Watch mode (tsc --watch)
 npm run start:mcp    # Run the MCP server
 ```

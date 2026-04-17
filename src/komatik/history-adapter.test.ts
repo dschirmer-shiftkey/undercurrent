@@ -26,9 +26,7 @@ const hoursAgo = (h: number) => new Date(now - h * 60 * 60 * 1000).toISOString()
 describe("KomatikHistoryAdapter", () => {
   it("returns event history and CRM context", async () => {
     const client = createMockClient({
-      komatik_profiles: [
-        { id: "user-1", email: "dev@komatik.xyz" },
-      ],
+      komatik_profiles: [{ id: "user-1", email: "dev@komatik.xyz" }],
       user_product_events: [
         {
           id: "evt-1",
@@ -111,9 +109,7 @@ describe("KomatikHistoryAdapter", () => {
 
     expect(layers.length).toBeGreaterThanOrEqual(1);
 
-    const eventLayer = layers.find((l) =>
-      l.summary.includes("product events"),
-    );
+    const eventLayer = layers.find((l) => l.summary.includes("product events"));
     expect(eventLayer).toBeDefined();
     expect(eventLayer!.summary).toContain("3 product events");
     expect(eventLayer!.summary).toContain("3 product(s)");
@@ -127,9 +123,7 @@ describe("KomatikHistoryAdapter", () => {
 
   it("returns empty layers when no events exist", async () => {
     const client = createMockClient({
-      komatik_profiles: [
-        { id: "user-2", email: "empty@komatik.xyz" },
-      ],
+      komatik_profiles: [{ id: "user-2", email: "empty@komatik.xyz" }],
       user_product_events: [],
       crm_contacts: [],
     });
@@ -141,9 +135,7 @@ describe("KomatikHistoryAdapter", () => {
 
   it("returns events without CRM when contact not found", async () => {
     const client = createMockClient({
-      komatik_profiles: [
-        { id: "user-3", email: "nocrm@komatik.xyz" },
-      ],
+      komatik_profiles: [{ id: "user-3", email: "nocrm@komatik.xyz" }],
       user_product_events: [
         {
           id: "evt-10",

@@ -58,12 +58,7 @@ export type CrmSource =
   | "referral"
   | "outreach";
 
-export type CrmStatus =
-  | "lead"
-  | "qualified"
-  | "opportunity"
-  | "customer"
-  | "churned";
+export type CrmStatus = "lead" | "qualified" | "opportunity" | "customer" | "churned";
 
 export interface CrmContact {
   id: string;
@@ -136,12 +131,7 @@ export interface CrmDeal {
 
 // ─── triage_intakes (migration 000002) ──────────────────────────────────────
 
-export type TriageProjectType =
-  | "repo"
-  | "link"
-  | "figma"
-  | "description"
-  | "other";
+export type TriageProjectType = "repo" | "link" | "figma" | "description" | "other";
 
 export type TriageUrgency = "low" | "medium" | "high";
 
@@ -184,12 +174,7 @@ export type FloeScanStatus =
   | "failed"
   | "cancelled";
 
-export type FloeFindingSeverity =
-  | "critical"
-  | "high"
-  | "medium"
-  | "low"
-  | "info";
+export type FloeFindingSeverity = "critical" | "high" | "medium" | "low" | "info";
 
 export interface FloeScan {
   id: string;
@@ -231,11 +216,7 @@ export type ForgeCategory =
 
 export type ForgePricingModel = "free" | "per_call" | "monthly" | "tiered";
 
-export type ForgeToolStatus =
-  | "pending_review"
-  | "active"
-  | "suspended"
-  | "deprecated";
+export type ForgeToolStatus = "pending_review" | "active" | "suspended" | "deprecated";
 
 export interface ForgeTool {
   id: string;
@@ -290,12 +271,7 @@ export interface LlmUsage {
 
 // ─── model_availability (migration 000004) ──────────────────────────────────
 
-export type ModelStatus =
-  | "discovered"
-  | "smoke_tested"
-  | "active"
-  | "deprecated"
-  | "unavailable";
+export type ModelStatus = "discovered" | "smoke_tested" | "active" | "deprecated" | "unavailable";
 
 export interface ModelAvailability {
   id: string;
@@ -314,22 +290,11 @@ export interface ModelAvailability {
 
 // ─── user_preferences (new table for Undercurrent internal track) ────────────
 
-export type PreferenceTone =
-  | "formal"
-  | "casual"
-  | "terse"
-  | "friendly";
+export type PreferenceTone = "formal" | "casual" | "terse" | "friendly";
 
-export type PreferenceExplanationDepth =
-  | "minimal"
-  | "standard"
-  | "deep";
+export type PreferenceExplanationDepth = "minimal" | "standard" | "deep";
 
-export type PreferenceResponseFormat =
-  | "code-first"
-  | "plan-first"
-  | "explanation-first"
-  | "mixed";
+export type PreferenceResponseFormat = "code-first" | "plan-first" | "explanation-first" | "mixed";
 
 export interface CodeStylePreferences {
   language: string | null;
@@ -354,11 +319,7 @@ export interface UserPreferences {
 
 // ─── enrichment_outcomes (new table for outcome learning) ────────────────────
 
-export type OutcomeVerdict =
-  | "accepted"
-  | "rejected"
-  | "revised"
-  | "ignored";
+export type OutcomeVerdict = "accepted" | "rejected" | "revised" | "ignored";
 
 export interface EnrichmentOutcome {
   id: string;

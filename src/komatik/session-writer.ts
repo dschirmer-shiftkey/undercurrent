@@ -1,8 +1,4 @@
-import type {
-  SessionMemoryInput,
-  SessionSnapshot,
-  SessionWriter,
-} from "../types.js";
+import type { SessionMemoryInput, SessionSnapshot, SessionWriter } from "../types.js";
 import type { KomatikWriteClient } from "./client.js";
 
 /**
@@ -33,9 +29,7 @@ export class KomatikSessionWriter implements SessionWriter {
       expires_at: m.expiresAt,
     }));
 
-    const { error } = await this.client
-      .from("session_memories")
-      .upsert(rows);
+    const { error } = await this.client.from("session_memories").upsert(rows);
 
     if (error) {
       throw new Error(`KomatikSessionWriter.writeMemories failed: ${error.message}`);
@@ -52,9 +46,7 @@ export class KomatikSessionWriter implements SessionWriter {
       expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     };
 
-    const { error } = await this.client
-      .from("session_memories")
-      .upsert([row]);
+    const { error } = await this.client.from("session_memories").upsert([row]);
 
     if (error) {
       throw new Error(`KomatikSessionWriter.writeSnapshot failed: ${error.message}`);

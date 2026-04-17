@@ -26,9 +26,7 @@ export function createMockClient(
   };
 }
 
-function createMockQueryBuilder(
-  rows: Record<string, unknown>[],
-): KomatikQueryBuilder {
+function createMockQueryBuilder(rows: Record<string, unknown>[]): KomatikQueryBuilder {
   return {
     select(_columns?: string): KomatikFilterBuilder {
       return createMockFilterBuilder([...rows]);
@@ -36,9 +34,7 @@ function createMockQueryBuilder(
   };
 }
 
-function createMockFilterBuilder(
-  rows: Record<string, unknown>[],
-): KomatikFilterBuilder {
+function createMockFilterBuilder(rows: Record<string, unknown>[]): KomatikFilterBuilder {
   let filtered = rows;
   let orderCol: string | null = null;
   let orderAsc = true;
@@ -57,10 +53,7 @@ function createMockFilterBuilder(
       filtered = filtered.filter((r) => values.includes(r[column]));
       return builder;
     },
-    order(
-      column: string,
-      options?: { ascending?: boolean },
-    ): KomatikFilterBuilder {
+    order(column: string, options?: { ascending?: boolean }): KomatikFilterBuilder {
       orderCol = column;
       orderAsc = options?.ascending ?? true;
       return builder;
@@ -85,9 +78,7 @@ function createMockFilterBuilder(
             value: KomatikQueryResult<Record<string, unknown>[]>,
           ) => TResult1 | PromiseLike<TResult1>)
         | null,
-      onrejected?:
-        | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
-        | null,
+      onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
     ): PromiseLike<TResult1 | TResult2> {
       const result = applyOrderAndLimit();
       const resolved: KomatikQueryResult<Record<string, unknown>[]> = {
@@ -106,9 +97,7 @@ function createMockFilterBuilder(
         const aVal = a[col];
         const bVal = b[col];
         if (typeof aVal === "string" && typeof bVal === "string") {
-          return orderAsc
-            ? aVal.localeCompare(bVal)
-            : bVal.localeCompare(aVal);
+          return orderAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
         }
         if (typeof aVal === "number" && typeof bVal === "number") {
           return orderAsc ? aVal - bVal : bVal - aVal;

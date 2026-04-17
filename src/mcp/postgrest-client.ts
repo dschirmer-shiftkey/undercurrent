@@ -34,12 +34,7 @@ class PostgRESTQueryBuilder implements KomatikQueryBuilder {
   ) {}
 
   select(columns?: string): KomatikFilterBuilder {
-    return new PostgRESTFilterBuilder(
-      this.restUrl,
-      this.apiKey,
-      this.table,
-      columns ?? "*",
-    );
+    return new PostgRESTFilterBuilder(this.restUrl, this.apiKey, this.table, columns ?? "*");
   }
 }
 
@@ -100,7 +95,9 @@ class PostgRESTFilterBuilder implements KomatikFilterBuilder {
 
   private async execute(
     single: boolean,
-  ): Promise<KomatikQueryResult<Record<string, unknown>> | KomatikQueryResult<Record<string, unknown>[]>> {
+  ): Promise<
+    KomatikQueryResult<Record<string, unknown>> | KomatikQueryResult<Record<string, unknown>[]>
+  > {
     const params: string[] = [`select=${encodeURIComponent(this.columns)}`];
     params.push(...this.filters);
 
@@ -147,7 +144,10 @@ class PostgRESTFilterBuilder implements KomatikFilterBuilder {
         return { data: data as Record<string, unknown>, error: null };
       }
 
-      return { data: (Array.isArray(data) ? data : [data]) as Record<string, unknown>[], error: null };
+      return {
+        data: (Array.isArray(data) ? data : [data]) as Record<string, unknown>[],
+        error: null,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown fetch error";
       return { data: null, error: { message } };

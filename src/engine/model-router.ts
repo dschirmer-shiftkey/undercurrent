@@ -25,8 +25,8 @@ const DATA_DRIVEN_THRESHOLD = 50;
 
 const DEFAULT_WEIGHTS: ScoringWeights = {
   successRate: 0.35,
-  acceptanceRate: 0.30,
-  latency: 0.10,
+  acceptanceRate: 0.3,
+  latency: 0.1,
   affinity: 0.25,
 };
 
@@ -35,11 +35,16 @@ const DEFAULT_WEIGHTS: ScoringWeights = {
 // no LLM needed. Re-uses the same domain detection patterns from
 // KomatikPipelineStrategy.
 
-const CODE_HINTS = /\b(code|typescript|javascript|python|react|api|endpoint|function|class|module|refactor|lint|compile|deploy|git|pr|merge|branch|test|ci|cd|docker|kubernetes|k8s|infra|backend|frontend|fullstack|debug)\b/i;
-const DEBUG_HINTS = /\b(error|bug|exception|stack.?trace|crash|failing|broken|regression|fix|debug|issue|404|500|null|undefined|nan)\b/i;
-const CREATIVE_HINTS = /\b(write|blog|story|copy|headline|slogan|brand|content|marketing|social|tone|voice|style|creative|design|ui|ux|color|font|layout|illustration|image|video|animation)\b/i;
-const ANALYSIS_HINTS = /\b(data|research|analyze|chart|metric|dashboard|report|statistics|trend|insight|forecast|compare|benchmark|evaluate|review|audit|survey)\b/i;
-const PLANNING_HINTS = /\b(architect|plan|roadmap|strategy|scope|milestone|timeline|estimate|spec|rfc|proposal|decision|tradeoff|migration)\b/i;
+const CODE_HINTS =
+  /\b(code|typescript|javascript|python|react|api|endpoint|function|class|module|refactor|lint|compile|deploy|git|pr|merge|branch|test|ci|cd|docker|kubernetes|k8s|infra|backend|frontend|fullstack|debug)\b/i;
+const DEBUG_HINTS =
+  /\b(error|bug|exception|stack.?trace|crash|failing|broken|regression|fix|debug|issue|404|500|null|undefined|nan)\b/i;
+const CREATIVE_HINTS =
+  /\b(write|blog|story|copy|headline|slogan|brand|content|marketing|social|tone|voice|style|creative|design|ui|ux|color|font|layout|illustration|image|video|animation)\b/i;
+const ANALYSIS_HINTS =
+  /\b(data|research|analyze|chart|metric|dashboard|report|statistics|trend|insight|forecast|compare|benchmark|evaluate|review|audit|survey)\b/i;
+const PLANNING_HINTS =
+  /\b(architect|plan|roadmap|strategy|scope|milestone|timeline|estimate|spec|rfc|proposal|decision|tradeoff|migration)\b/i;
 
 export class TaskDomainClassifier {
   classify(intent: IntentSignal): TaskDomain {
@@ -48,9 +53,11 @@ export class TaskDomainClassifier {
     const combined = `${hints} ${fragments}`;
 
     if (intent.action === "fix" && DEBUG_HINTS.test(combined)) return "debugging";
-    if ((intent.action === "build" || intent.action === "fix") && CODE_HINTS.test(combined)) return "coding";
+    if ((intent.action === "build" || intent.action === "fix") && CODE_HINTS.test(combined))
+      return "coding";
     if (intent.action === "design" && CREATIVE_HINTS.test(combined)) return "creative";
-    if ((intent.action === "design" || intent.action === "decide") && PLANNING_HINTS.test(combined)) return "planning";
+    if ((intent.action === "design" || intent.action === "decide") && PLANNING_HINTS.test(combined))
+      return "planning";
     if (intent.action === "explore" && ANALYSIS_HINTS.test(combined)) return "analysis";
 
     if (DEBUG_HINTS.test(combined)) return "debugging";
@@ -285,7 +292,11 @@ export class ModelRouter {
     const domain = this.classifier.classify(intent);
     const rec = this.scorer.score(domain, data);
 
-    if (rec.basedOnDataPoints === 0 && rec.alternatives.length === 0 && data.availableModels.length === 0) {
+    if (
+      rec.basedOnDataPoints === 0 &&
+      rec.alternatives.length === 0 &&
+      data.availableModels.length === 0
+    ) {
       rec.recommended.provider = this.defaultProvider;
       rec.recommended.model = `${this.defaultProvider}-default`;
       rec.reasoning = `No models available in roster. Falling back to configured default provider (${this.defaultProvider}) for ${domain}.`;

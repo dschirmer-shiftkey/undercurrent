@@ -42,10 +42,8 @@ export class KomatikHistoryAdapter implements ContextAdapter {
       this.fetchCrmContact(),
     ]);
 
-    const events =
-      eventsResult.status === "fulfilled" ? eventsResult.value : [];
-    const contact =
-      contactResult.status === "fulfilled" ? contactResult.value : null;
+    const events = eventsResult.status === "fulfilled" ? eventsResult.value : [];
+    const contact = contactResult.status === "fulfilled" ? contactResult.value : null;
 
     if (events.length > 0) {
       layers.push({
@@ -122,10 +120,7 @@ export class KomatikHistoryAdapter implements ContextAdapter {
   private summarizeEvents(events: UserProductEvent[]): string {
     const productCounts = new Map<string, number>();
     for (const e of events) {
-      productCounts.set(
-        e.product_slug,
-        (productCounts.get(e.product_slug) ?? 0) + 1,
-      );
+      productCounts.set(e.product_slug, (productCounts.get(e.product_slug) ?? 0) + 1);
     }
 
     const recentSlice = events.slice(0, 5);
@@ -138,10 +133,7 @@ export class KomatikHistoryAdapter implements ContextAdapter {
     return `${events.length} product events across ${totalProducts} product(s). Recent: ${recentParts.join(", ")}`;
   }
 
-  private summarizeContact(
-    contact: CrmContact,
-    activities: CrmActivity[],
-  ): string {
+  private summarizeContact(contact: CrmContact, activities: CrmActivity[]): string {
     const parts: string[] = [];
     parts.push(`CRM: ${contact.status} (score ${contact.score})`);
     parts.push(`source: ${contact.source}`);

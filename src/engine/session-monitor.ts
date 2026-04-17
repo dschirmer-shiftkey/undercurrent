@@ -22,7 +22,7 @@ interface HealthThresholds {
 }
 
 const DEFAULT_THRESHOLDS: HealthThresholds = {
-  warmRatio: 0.40,
+  warmRatio: 0.4,
   degradingRatio: 0.65,
   criticalRatio: 0.85,
   warmTopicShifts: 3,
@@ -75,7 +75,7 @@ export class SessionMonitor {
     if (this.state.lastCheckpoint === null) {
       return this.state.messageCount >= this.checkpointInterval;
     }
-    return (this.state.messageCount - this.state.lastCheckpoint) >= this.checkpointInterval;
+    return this.state.messageCount - this.state.lastCheckpoint >= this.checkpointInterval;
   }
 
   markCheckpoint(): void {
@@ -144,10 +144,7 @@ export class SessionMonitor {
       return "degrading";
     }
 
-    if (
-      ratio >= this.thresholds.warmRatio ||
-      shifts >= this.thresholds.warmTopicShifts
-    ) {
+    if (ratio >= this.thresholds.warmRatio || shifts >= this.thresholds.warmTopicShifts) {
       return "warm";
     }
 
@@ -170,10 +167,7 @@ export class SessionMonitor {
 
     if (this.previousTopics.length > 0) {
       const lastSignature = this.previousTopics[this.previousTopics.length - 1]!;
-      const overlap = computeOverlap(
-        lastSignature.split(" "),
-        keywords,
-      );
+      const overlap = computeOverlap(lastSignature.split(" "), keywords);
       if (overlap < 0.25) {
         this.state.topicShiftCount += 1;
       }
@@ -218,16 +212,38 @@ function extractTopicKeywords(message: string): string[] {
     .filter((w) => w.length > 4);
 
   const stopWords = new Set([
-    "about", "after", "again", "being", "between", "could",
-    "every", "first", "going", "great", "their", "there",
-    "these", "thing", "think", "those", "through", "under",
-    "using", "where", "which", "while", "would", "should",
-    "please", "thanks", "really", "actually", "basically",
+    "about",
+    "after",
+    "again",
+    "being",
+    "between",
+    "could",
+    "every",
+    "first",
+    "going",
+    "great",
+    "their",
+    "there",
+    "these",
+    "thing",
+    "think",
+    "those",
+    "through",
+    "under",
+    "using",
+    "where",
+    "which",
+    "while",
+    "would",
+    "should",
+    "please",
+    "thanks",
+    "really",
+    "actually",
+    "basically",
   ]);
 
-  return words
-    .filter((w) => !stopWords.has(w))
-    .slice(0, 5);
+  return words.filter((w) => !stopWords.has(w)).slice(0, 5);
 }
 
 function computeOverlap(a: string[], b: string[]): number {

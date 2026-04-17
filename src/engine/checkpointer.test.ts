@@ -140,9 +140,7 @@ describe("Checkpointer", () => {
       monitor.setActiveWork(["task"]);
       monitor.track("test", [{ role: "user", content: "test" }]);
 
-      await expect(
-        checkpointer.checkpoint(monitor, []),
-      ).resolves.toBeUndefined();
+      await expect(checkpointer.checkpoint(monitor, [])).resolves.toBeUndefined();
     });
   });
 
@@ -219,11 +217,7 @@ describe("Checkpointer", () => {
       monitor.setActiveWork(["task"]);
       monitor.track("test", [{ role: "user", content: "test" }]);
 
-      await checkpointer.produceHandoff(
-        monitor,
-        makeConversation(5),
-        makeContextLayers(),
-      );
+      await checkpointer.produceHandoff(monitor, makeConversation(5), makeContextLayers());
 
       expect(writer.writtenSnapshots.length).toBe(1);
       expect(writer.writtenSnapshots[0]!.handoff).not.toBeNull();
@@ -260,11 +254,7 @@ describe("Checkpointer", () => {
       monitor.addUnresolved("pagination");
       monitor.track("test", [{ role: "user", content: "test" }]);
 
-      await checkpointer.produceHandoff(
-        monitor,
-        makeConversation(5),
-        makeContextLayers(),
-      );
+      await checkpointer.produceHandoff(monitor, makeConversation(5), makeContextLayers());
 
       const layers = await checkpointer.restoreFromSnapshot();
       expect(layers.length).toBe(1);

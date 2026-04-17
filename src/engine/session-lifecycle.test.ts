@@ -31,9 +31,7 @@ function createInMemoryWriter(): SessionWriter & {
       );
     },
     async getLatestSnapshot(_userId: string): Promise<SessionSnapshot | null> {
-      return store.snapshots.length > 0
-        ? store.snapshots[store.snapshots.length - 1]!
-        : null;
+      return store.snapshots.length > 0 ? store.snapshots[store.snapshots.length - 1]! : null;
     },
   };
   return store;
@@ -83,14 +81,16 @@ describe("Session Lifecycle Integration", () => {
 
   it("checkpoints after configured interval", async () => {
     const writer = createInMemoryWriter();
-    const pipeline = new Pipeline(makeConfig(writer, {
-      sessionMonitor: {
-        userId: "test-user",
-        tokenBudget: 100_000,
-        checkpointInterval: 2,
-        writer,
-      },
-    }));
+    const pipeline = new Pipeline(
+      makeConfig(writer, {
+        sessionMonitor: {
+          userId: "test-user",
+          tokenBudget: 100_000,
+          checkpointInterval: 2,
+          writer,
+        },
+      }),
+    );
 
     const conversation = [{ role: "user" as const, content: "context" }];
 
@@ -139,14 +139,16 @@ describe("Session Lifecycle Integration", () => {
 
   it("health degrades with large token accumulation then recovers after compaction", async () => {
     const writer = createInMemoryWriter();
-    const pipeline = new Pipeline(makeConfig(writer, {
-      sessionMonitor: {
-        userId: "test-user",
-        tokenBudget: 200,
-        checkpointInterval: 50,
-        writer,
-      },
-    }));
+    const pipeline = new Pipeline(
+      makeConfig(writer, {
+        sessionMonitor: {
+          userId: "test-user",
+          tokenBudget: 200,
+          checkpointInterval: 50,
+          writer,
+        },
+      }),
+    );
 
     const bigMessage = "x".repeat(800);
     const conversation = [{ role: "user" as const, content: "ctx" }];
@@ -166,14 +168,16 @@ describe("Session Lifecycle Integration", () => {
   it("cold-start restoration works when snapshot exists", async () => {
     const writer = createInMemoryWriter();
 
-    const pipeline1 = new Pipeline(makeConfig(writer, {
-      sessionMonitor: {
-        userId: "test-user",
-        tokenBudget: 50,
-        checkpointInterval: 1,
-        writer,
-      },
-    }));
+    const pipeline1 = new Pipeline(
+      makeConfig(writer, {
+        sessionMonitor: {
+          userId: "test-user",
+          tokenBudget: 50,
+          checkpointInterval: 1,
+          writer,
+        },
+      }),
+    );
 
     const bigMessage = "x".repeat(400);
     await pipeline1.enrich({

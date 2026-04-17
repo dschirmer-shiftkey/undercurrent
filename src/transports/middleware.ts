@@ -37,10 +37,7 @@ export interface MiddlewareOptions {
  * });
  * ```
  */
-export function createMiddleware(
-  pipeline: Pipeline,
-  options?: MiddlewareOptions,
-) {
+export function createMiddleware(pipeline: Pipeline, options?: MiddlewareOptions) {
   const extractMessage =
     options?.extractMessage ??
     ((req: unknown) => {
@@ -60,11 +57,7 @@ export function createMiddleware(
       (req as MiddlewareRequest).undercurrent = result;
     });
 
-  return async (
-    req: unknown,
-    _res: unknown,
-    next: (err?: unknown) => void,
-  ) => {
+  return async (req: unknown, _res: unknown, next: (err?: unknown) => void) => {
     try {
       const input = extractMessage(req);
       if (!input) {

@@ -23,9 +23,7 @@ const stubInput: AdapterInput = {
 describe("KomatikProjectAdapter", () => {
   it("returns triage intakes and floe scans for user", async () => {
     const client = createMockClient({
-      komatik_profiles: [
-        { id: "user-1", email: "dev@komatik.xyz" },
-      ],
+      komatik_profiles: [{ id: "user-1", email: "dev@komatik.xyz" }],
       triage_intakes: [
         {
           id: "tri-1",
@@ -100,17 +98,13 @@ describe("KomatikProjectAdapter", () => {
 
     expect(layers.length).toBe(2);
 
-    const intakeLayer = layers.find((l) =>
-      l.summary.includes("triage"),
-    );
+    const intakeLayer = layers.find((l) => l.summary.includes("triage"));
     expect(intakeLayer).toBeDefined();
     expect(intakeLayer!.summary).toContain("E-commerce platform rewrite");
     expect(intakeLayer!.summary).toContain("in_progress");
     expect(intakeLayer!.summary).toContain("high urgency");
 
-    const scanLayer = layers.find((l) =>
-      l.summary.includes("Floe scan"),
-    );
+    const scanLayer = layers.find((l) => l.summary.includes("Floe scan"));
     expect(scanLayer).toBeDefined();
     expect(scanLayer!.summary).toContain("2 Floe scan(s)");
     expect(scanLayer!.summary).toContain("12 total findings");
@@ -119,9 +113,7 @@ describe("KomatikProjectAdapter", () => {
 
   it("returns empty layers when user has no projects", async () => {
     const client = createMockClient({
-      komatik_profiles: [
-        { id: "user-2", email: "empty@komatik.xyz" },
-      ],
+      komatik_profiles: [{ id: "user-2", email: "empty@komatik.xyz" }],
       triage_intakes: [],
       floe_scans: [],
     });
@@ -133,9 +125,7 @@ describe("KomatikProjectAdapter", () => {
 
   it("summarizes delivered diagnostics separately", async () => {
     const client = createMockClient({
-      komatik_profiles: [
-        { id: "user-3", email: "done@komatik.xyz" },
-      ],
+      komatik_profiles: [{ id: "user-3", email: "done@komatik.xyz" }],
       triage_intakes: [
         {
           id: "tri-done",

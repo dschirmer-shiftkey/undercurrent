@@ -1,10 +1,4 @@
-import type {
-  Assumption,
-  ContextLayer,
-  Gap,
-  IntentSignal,
-  TargetPlatform,
-} from "../types.js";
+import type { Assumption, ContextLayer, Gap, IntentSignal, TargetPlatform } from "../types.js";
 
 export interface ComposeInput {
   message: string;
@@ -58,9 +52,7 @@ function composeCursor(input: ComposeInput): string {
   }
 
   const nonMetaContext = input.context.filter(
-    (c) =>
-      c.source !== "komatik-preferences" &&
-      c.source !== "komatik-memory",
+    (c) => c.source !== "komatik-preferences" && c.source !== "komatik-memory",
   );
   if (nonMetaContext.length > 0) {
     const contextLines = nonMetaContext.map((l) => `  ${l.source}: ${l.summary}`);
@@ -93,7 +85,7 @@ function composeClaude(input: ComposeInput): string {
 
   parts.push(
     `<intent action="${input.intent.action}" specificity="${input.intent.specificity}" ` +
-    `scope="${input.intent.scope}" emotion="${input.intent.emotionalLoad}" />`,
+      `scope="${input.intent.scope}" emotion="${input.intent.emotionalLoad}" />`,
   );
 
   const prefLayer = input.context.find((c) => c.source === "komatik-preferences");
@@ -118,7 +110,9 @@ function composeClaude(input: ComposeInput): string {
 
   const projectContext = input.context.filter(
     (c) =>
-      !["komatik-preferences", "komatik-memory", "komatik-identity", "komatik-outcomes"].includes(c.source),
+      !["komatik-preferences", "komatik-memory", "komatik-identity", "komatik-outcomes"].includes(
+        c.source,
+      ),
   );
   if (projectContext.length > 0) {
     const lines = projectContext.map((l) => `- [${l.source}]: ${l.summary}`);

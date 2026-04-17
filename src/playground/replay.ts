@@ -152,7 +152,9 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
     if (verbose) {
       for (const { index, message, result } of report.results) {
         const preview = message.slice(0, 80).replace(/\n/g, " ");
-        console.log(`${BOLD}── Message ${index + 1}: ${RESET}${preview}${message.length > 80 ? "..." : ""}`);
+        console.log(
+          `${BOLD}── Message ${index + 1}: ${RESET}${preview}${message.length > 80 ? "..." : ""}`,
+        );
         console.log(formatResult(result, true));
       }
     }
@@ -171,9 +173,11 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
   for (const d of depthOrder) {
     const count = stats.depthDistribution[d] ?? 0;
     const pct = stats.totalMessages > 0 ? ((count / stats.totalMessages) * 100).toFixed(0) : "0";
-    const bar = "█".repeat(Math.round(count / stats.totalMessages * 30));
+    const bar = "█".repeat(Math.round((count / stats.totalMessages) * 30));
     const color = d === "none" ? DIM : d === "deep" ? RED : d === "standard" ? GREEN : YELLOW;
-    console.log(`    ${color}${d.padEnd(10)}${RESET} ${String(count).padStart(3)} (${pct.padStart(3)}%) ${color}${bar}${RESET}`);
+    console.log(
+      `    ${color}${d.padEnd(10)}${RESET} ${String(count).padStart(3)} (${pct.padStart(3)}%) ${color}${bar}${RESET}`,
+    );
   }
   console.log("");
 
@@ -197,7 +201,9 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
 
   // Gap types
   if (stats.totalGaps > 0) {
-    console.log(`  ${BOLD}Gaps (${stats.totalGaps} total, ${stats.totalAssumptions} assumed, ${stats.totalClarifications} clarifications):${RESET}`);
+    console.log(
+      `  ${BOLD}Gaps (${stats.totalGaps} total, ${stats.totalAssumptions} assumed, ${stats.totalClarifications} clarifications):${RESET}`,
+    );
     const sortedGaps = Object.entries(stats.gapDescriptions).sort(([, a], [, b]) => b - a);
     for (const [desc, count] of sortedGaps) {
       console.log(`    ${String(count).padStart(3)}x  ${desc}`);
@@ -210,7 +216,9 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
 
   const deepMessages = allResults.filter((r) => r.result.metadata.enrichmentDepth === "deep");
   if (deepMessages.length > 0) {
-    console.log(`  ${BOLD}${RED}Interesting: ${deepMessages.length} message(s) triggered DEEP enrichment:${RESET}`);
+    console.log(
+      `  ${BOLD}${RED}Interesting: ${deepMessages.length} message(s) triggered DEEP enrichment:${RESET}`,
+    );
     for (const { index, message } of deepMessages) {
       const preview = message.slice(0, 80).replace(/\n/g, " ");
       console.log(`    #${index + 1}: "${preview}${message.length > 80 ? "..." : ""}"`);
@@ -220,10 +228,14 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
 
   const assumedMessages = allResults.filter((r) => r.result.assumptions.length > 0);
   if (assumedMessages.length > 0) {
-    console.log(`  ${BOLD}${YELLOW}Interesting: ${assumedMessages.length} message(s) required assumptions:${RESET}`);
+    console.log(
+      `  ${BOLD}${YELLOW}Interesting: ${assumedMessages.length} message(s) required assumptions:${RESET}`,
+    );
     for (const { index, message, result } of assumedMessages) {
       const preview = message.slice(0, 60).replace(/\n/g, " ");
-      console.log(`    #${index + 1}: "${preview}${message.length > 60 ? "..." : ""}" → ${result.assumptions.length} assumption(s)`);
+      console.log(
+        `    #${index + 1}: "${preview}${message.length > 60 ? "..." : ""}" → ${result.assumptions.length} assumption(s)`,
+      );
     }
     console.log("");
   }
@@ -251,7 +263,10 @@ async function main(): Promise<void> {
   }
 
   if (filePaths.length === 0) {
-    const transcriptDir = resolve(process.cwd(), "../.cursor/projects/c-Users-david-Projects-undercurrent/agent-transcripts");
+    const transcriptDir = resolve(
+      process.cwd(),
+      "../.cursor/projects/c-Users-david-Projects-undercurrent/agent-transcripts",
+    );
     try {
       const discovered = await discoverTranscripts(transcriptDir);
       if (discovered.length === 0) {
@@ -262,7 +277,9 @@ async function main(): Promise<void> {
       filePaths.push(...discovered);
     } catch {
       console.error("No transcript files found. Pass a path: npm run replay -- <path.jsonl>");
-      console.error("Usage: npm run replay -- [--platform generic] [--verbose] [--output report.json] <file.jsonl ...>");
+      console.error(
+        "Usage: npm run replay -- [--platform generic] [--verbose] [--output report.json] <file.jsonl ...>",
+      );
       process.exit(1);
     }
   }

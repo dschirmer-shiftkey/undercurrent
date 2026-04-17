@@ -53,9 +53,7 @@ export class Pipeline {
   private lastContext: ContextLayer[] = [];
 
   constructor(config: UndercurrentConfig) {
-    this.adapters = [...config.adapters].sort(
-      (a, b) => a.priority - b.priority,
-    );
+    this.adapters = [...config.adapters].sort((a, b) => a.priority - b.priority);
     this.strategy = config.strategy;
     this.maxClarifications = config.maxClarifications ?? 2;
     this.confidenceThreshold = config.assumptionConfidenceThreshold ?? 0.6;
@@ -86,7 +84,10 @@ export class Pipeline {
 
     if (config.modelRouter?.enabled) {
       this.modelRouterConfig = config.modelRouter;
-      this.modelRouter = new ModelRouter(config.modelRouter.scoringWeights, config.modelRouter.defaultProvider);
+      this.modelRouter = new ModelRouter(
+        config.modelRouter.scoringWeights,
+        config.modelRouter.defaultProvider,
+      );
       this.modelUsageAdapter = new KomatikModelUsageAdapter({
         client: config.modelRouter.client,
         userId: config.modelRouter.userId,
@@ -179,13 +180,7 @@ export class Pipeline {
     });
 
     const enrichedMessage = await this.withTimeout(
-      this.strategy.compose(
-        input.message,
-        intent,
-        context,
-        assumptions,
-        resolvedGaps,
-      ),
+      this.strategy.compose(input.message, intent, context, assumptions, resolvedGaps),
       "compose",
     );
 
@@ -259,9 +254,7 @@ export class Pipeline {
     this.log("session health", health, this.monitor.getState().estimatedTokens, "tokens");
   }
 
-  private async maybeCheckpoint(
-    conversation: ConversationTurn[],
-  ): Promise<void> {
+  private async maybeCheckpoint(conversation: ConversationTurn[]): Promise<void> {
     if (!this.monitor || !this.checkpointer) return;
 
     const health = this.monitor.getHealth();
@@ -274,10 +267,7 @@ export class Pipeline {
           this.lastContext,
         );
         this.monitor.resetAfterCompaction(
-          compaction.recentExchanges.reduce(
-            (sum, t) => sum + Math.ceil(t.content.length / 4),
-            0,
-          ),
+          compaction.recentExchanges.reduce((sum, t) => sum + Math.ceil(t.content.length / 4), 0),
         );
         this.log("session compacted, saved ~", compaction.estimatedTokensSaved, "tokens");
       } catch {
@@ -398,9 +388,7 @@ export class Pipeline {
       }),
     );
 
-    const activeAdapters = available.filter(
-      (a): a is ContextAdapter => a !== null,
-    );
+    const activeAdapters = available.filter((a): a is ContextAdapter => a !== null);
 
     const adapterInput = {
       message,
@@ -433,19 +421,12 @@ export class Pipeline {
       .sort((a, b) => a.priority - b.priority);
   }
 
-  private async resolveGaps(
-    gaps: Gap[],
-    context: ContextLayer[],
-  ): Promise<Gap[]> {
+  private async resolveGaps(gaps: Gap[], context: ContextLayer[]): Promise<Gap[]> {
     return Promise.all(
       gaps.map(async (gap) => {
         if (gap.resolution) return gap;
         try {
-          const resolution = await this.strategy.resolveGap(
-            gap,
-            context,
-            this.confidenceThreshold,
-          );
+          const resolution = await this.strategy.resolveGap(gap, context, this.confidenceThreshold);
           return { ...gap, resolution };
         } catch {
           return gap;
@@ -457,8 +438,7 @@ export class Pipeline {
   private extractAssumptions(gaps: Gap[]): Assumption[] {
     return gaps
       .filter(
-        (g): g is Gap & { resolution: { type: "assumed" } } =>
-          g.resolution?.type === "assumed",
+        (g): g is Gap & { resolution: { type: "assumed" } } => g.resolution?.type === "assumed",
       )
       .map((g) => (g.resolution as { type: "assumed"; assumption: Assumption }).assumption);
   }
@@ -468,15 +448,11 @@ export class Pipeline {
       .filter((g) => g.resolution?.type === "needs-clarification")
       .map(
         (g) =>
-          (g.resolution as Extract<GapResolution, { type: "needs-clarification" }>)
-            .clarification,
+          (g.resolution as Extract<GapResolution, { type: "needs-clarification" }>).clarification,
       );
   }
 
-  private async withTimeout<T>(
-    promise: Promise<T>,
-    label: string,
-  ): Promise<T> {
+  private async withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
     return Promise.race([
       promise,
       new Promise<never>((_, reject) =>

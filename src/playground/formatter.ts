@@ -26,7 +26,7 @@ export function formatResult(result: EnrichedPrompt, verbose: boolean): string {
   const i = result.intent;
   lines.push(
     `  Action: ${c(BOLD, i.action)}  Specificity: ${c(BOLD, i.specificity)}  ` +
-    `Scope: ${c(BOLD, i.scope)}  Emotion: ${c(BOLD, i.emotionalLoad)}`
+      `Scope: ${c(BOLD, i.scope)}  Emotion: ${c(BOLD, i.emotionalLoad)}`,
   );
   lines.push(`  Confidence: ${c(BOLD, (i.confidence * 100).toFixed(0) + "%")}`);
   if (i.domainHints.length > 0) {
@@ -40,8 +40,11 @@ export function formatResult(result: EnrichedPrompt, verbose: boolean): string {
   lines.push("");
   lines.push(c(BOLD + YELLOW, "▸ Enrichment Depth"));
   const depth = result.metadata.enrichmentDepth;
-  const depthColor = depth === "none" ? DIM : depth === "deep" ? RED : depth === "standard" ? GREEN : YELLOW;
-  lines.push(`  ${c(BOLD + depthColor, depth.toUpperCase())} (strategy: ${result.metadata.strategyUsed}, platform: ${result.metadata.targetPlatform})`);
+  const depthColor =
+    depth === "none" ? DIM : depth === "deep" ? RED : depth === "standard" ? GREEN : YELLOW;
+  lines.push(
+    `  ${c(BOLD + depthColor, depth.toUpperCase())} (strategy: ${result.metadata.strategyUsed}, platform: ${result.metadata.targetPlatform})`,
+  );
 
   if (depth === "none") {
     lines.push(`  ${c(DIM, "→ Passthrough — message forwarded unchanged")}`);
@@ -91,7 +94,10 @@ export function formatResult(result: EnrichedPrompt, verbose: boolean): string {
       if (resolution?.type === "filled") {
         resStr = c(GREEN, `filled → ${resolution.value.slice(0, 80)} (from ${resolution.source})`);
       } else if (resolution?.type === "assumed") {
-        resStr = c(YELLOW, `assumed (${(resolution.assumption.confidence * 100).toFixed(0)}%): ${resolution.assumption.claim}`);
+        resStr = c(
+          YELLOW,
+          `assumed (${(resolution.assumption.confidence * 100).toFixed(0)}%): ${resolution.assumption.claim}`,
+        );
       } else if (resolution?.type === "needs-clarification") {
         resStr = c(RED, `needs clarification: ${resolution.clarification.question}`);
       }
@@ -106,7 +112,9 @@ export function formatResult(result: EnrichedPrompt, verbose: boolean): string {
     lines.push(c(BOLD + YELLOW, `▸ Assumptions (${result.assumptions.length})`));
     for (const a of result.assumptions) {
       lines.push(`  ${c(YELLOW, "⚠")} ${a.claim}`);
-      lines.push(`    ${c(DIM, `Confidence: ${(a.confidence * 100).toFixed(0)}% — Basis: ${a.basis}`)}`);
+      lines.push(
+        `    ${c(DIM, `Confidence: ${(a.confidence * 100).toFixed(0)}% — Basis: ${a.basis}`)}`,
+      );
     }
   }
 
@@ -132,17 +140,18 @@ export function formatResult(result: EnrichedPrompt, verbose: boolean): string {
 
   // Metadata
   lines.push("");
-  lines.push(c(DIM, `Completed in ${result.metadata.processingTimeMs.toFixed(1)}ms | Pipeline v${result.metadata.pipelineVersion}`));
+  lines.push(
+    c(
+      DIM,
+      `Completed in ${result.metadata.processingTimeMs.toFixed(1)}ms | Pipeline v${result.metadata.pipelineVersion}`,
+    ),
+  );
   lines.push("");
 
   return lines.join("\n");
 }
 
-export function formatCompactRow(
-  index: number,
-  message: string,
-  result: EnrichedPrompt,
-): string {
+export function formatCompactRow(index: number, message: string, result: EnrichedPrompt): string {
   const msg = message.length > 50 ? message.slice(0, 47) + "..." : message.padEnd(50);
   const depth = result.metadata.enrichmentDepth.padEnd(8);
   const intent = result.intent.action.padEnd(7);
@@ -156,9 +165,7 @@ export function formatCompactRow(
 }
 
 export function formatCompactHeader(): string {
-  const header =
-    "  #  Message".padEnd(57) +
-    "Depth     Intent   Spec    Ctx  Gap  Asm   Time";
+  const header = "  #  Message".padEnd(57) + "Depth     Intent   Spec    Ctx  Gap  Asm   Time";
   const separator = "─".repeat(header.length);
   return `${header}\n${separator}`;
 }
