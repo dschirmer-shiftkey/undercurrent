@@ -41,3 +41,25 @@ export interface KomatikAdapterOptions {
   client: KomatikDataClient;
   userId: string;
 }
+
+// ─── Write-capable extension ────────────────────────────────────────────────
+// Used by KomatikSessionWriter. The standard read adapters don't need this.
+// Any Supabase client satisfies both KomatikDataClient and KomatikWriteClient.
+
+export interface KomatikWriteClient extends KomatikDataClient {
+  from(table: string): KomatikWriteQueryBuilder;
+}
+
+export interface KomatikWriteQueryBuilder extends KomatikQueryBuilder {
+  insert(data: Record<string, unknown> | Record<string, unknown>[]): KomatikWriteFilterBuilder;
+  upsert(data: Record<string, unknown> | Record<string, unknown>[]): KomatikWriteFilterBuilder;
+  delete(): KomatikWriteFilterBuilder;
+  update(data: Record<string, unknown>): KomatikWriteFilterBuilder;
+}
+
+export interface KomatikWriteFilterBuilder extends KomatikFilterBuilder {
+  eq(column: string, value: unknown): KomatikWriteFilterBuilder;
+  neq(column: string, value: unknown): KomatikWriteFilterBuilder;
+  in(column: string, values: unknown[]): KomatikWriteFilterBuilder;
+  lt(column: string, value: unknown): KomatikWriteFilterBuilder;
+}

@@ -9,10 +9,20 @@ import type {
   Gap,
   GapResolution,
   IntentSignal,
+  ModelCallerFn,
+  ModelRecommendation,
+  ModelRouterConfig,
   PipelineHooks,
+  ProcessResult,
+  SessionHealth,
   TargetPlatform,
   UndercurrentConfig,
 } from "../types.js";
+import { Checkpointer } from "./checkpointer.js";
+import { Compactor } from "./compactor.js";
+import { ModelRouter } from "./model-router.js";
+import { KomatikModelUsageAdapter } from "../komatik/model-usage-adapter.js";
+import { SessionMonitor } from "./session-monitor.js";
 
 const PIPELINE_VERSION = "0.1.0";
 
@@ -35,6 +45,12 @@ export class Pipeline {
   private readonly debug: boolean;
   private readonly onEnrichment?: (result: EnrichedPrompt) => void;
   private hooks: PipelineHooks = {};
+  private readonly monitor: SessionMonitor | null;
+  private readonly checkpointer: Checkpointer | null;
+  private readonly modelRouter: ModelRouter | null;
+  private readonly modelRouterConfig: ModelRouterConfig | null;
+  private readonly modelUsageAdapter: KomatikModelUsageAdapter | null;
+  private lastContext: ContextLayer[] = [];
 
   constructor(config: UndercurrentConfig) {
     this.adapters = [...config.adapters].sort(
@@ -47,10 +63,51 @@ export class Pipeline {
     this.defaultPlatform = config.targetPlatform ?? "generic";
     this.debug = config.debug ?? false;
     this.onEnrichment = config.onEnrichment;
+
+    if (config.sessionMonitor) {
+      this.monitor = new SessionMonitor(config.sessionMonitor);
+      const compactor = new Compactor({
+        llmCall: config.sessionMonitor.compactorLlmCall,
+      });
+
+      if (config.sessionMonitor.writer) {
+        this.checkpointer = new Checkpointer({
+          writer: config.sessionMonitor.writer,
+          compactor,
+          userId: config.sessionMonitor.userId ?? "anonymous",
+        });
+      } else {
+        this.checkpointer = null;
+      }
+    } else {
+      this.monitor = null;
+      this.checkpointer = null;
+    }
+
+    if (config.modelRouter?.enabled) {
+      this.modelRouterConfig = config.modelRouter;
+      this.modelRouter = new ModelRouter(config.modelRouter.scoringWeights, config.modelRouter.defaultProvider);
+      this.modelUsageAdapter = new KomatikModelUsageAdapter({
+        client: config.modelRouter.client,
+        userId: config.modelRouter.userId,
+      });
+    } else {
+      this.modelRouterConfig = null;
+      this.modelRouter = null;
+      this.modelUsageAdapter = null;
+    }
   }
 
   setHooks(hooks: PipelineHooks): void {
     this.hooks = hooks;
+  }
+
+  getSessionHealth(): SessionHealth | null {
+    return this.monitor?.getHealth() ?? null;
+  }
+
+  getSessionId(): string | null {
+    return this.monitor?.getSessionId() ?? null;
   }
 
   async enrich(input: EnrichInput): Promise<EnrichedPrompt> {
@@ -58,6 +115,17 @@ export class Pipeline {
     const conversation = input.conversation ?? [];
     const adapterTimings: Record<string, number> = {};
     const platform = input.targetPlatform ?? this.defaultPlatform;
+
+    // ── Session Lifecycle: Cold-Start Restoration ────────────────────────
+    let restoredLayers: ContextLayer[] = [];
+    if (this.monitor && this.checkpointer && conversation.length === 0) {
+      try {
+        restoredLayers = await this.checkpointer.restoreFromSnapshot();
+        this.log("cold-start restoration", restoredLayers.length, "layers");
+      } catch {
+        this.log("cold-start restoration failed, continuing without");
+      }
+    }
 
     // ── Stage 1: Intent Classification ───────────────────────────────────
     this.hooks.beforeClassify?.(input.message);
@@ -71,18 +139,21 @@ export class Pipeline {
     const depth = this.determineDepth(intent);
 
     if (depth === "none") {
-      return this.passthrough(input.message, intent, start, platform);
+      const result = this.passthrough(input.message, intent, start, platform);
+      this.trackSession(input.message, conversation, result.enrichedMessage);
+      return result;
     }
 
     // ── Stage 2: Context Harvesting ──────────────────────────────────────
     this.hooks.beforeGather?.(intent);
-    const context = await this.harvestContext(
+    const harvested = await this.harvestContext(
       input.message,
       intent,
       conversation,
       adapterTimings,
       input.enrichmentContext,
     );
+    const context = [...restoredLayers, ...harvested];
     this.hooks.afterGather?.(context);
     this.log("context layers", context.length);
 
@@ -138,7 +209,91 @@ export class Pipeline {
 
     this.hooks.afterCompose?.(result);
     this.onEnrichment?.(result);
+
+    // ── Session Lifecycle: Track + Checkpoint ────────────────────────────
+    this.lastContext = context;
+    this.trackSession(input.message, conversation, enrichedMessage);
+    await this.maybeCheckpoint(conversation);
+
     return result;
+  }
+
+  async process(input: EnrichInput): Promise<ProcessResult> {
+    if (!this.modelRouter || !this.modelRouterConfig || !this.modelUsageAdapter) {
+      throw new Error("Undercurrent: process() requires modelRouter to be configured and enabled.");
+    }
+
+    const enrichedPrompt = await this.enrich(input);
+    const recommendation = await this.routeModel(enrichedPrompt.intent);
+
+    enrichedPrompt.metadata.modelRecommendation = recommendation;
+    this.modelRouterConfig.onModelSelected?.(recommendation);
+
+    const caller: ModelCallerFn = this.modelRouterConfig.caller;
+    const modelResponse = await caller({
+      model: recommendation.recommended.model,
+      provider: recommendation.recommended.provider,
+      messages: input.conversation ?? [],
+      enrichedSystemPrompt: enrichedPrompt.enrichedMessage,
+    });
+
+    return { enrichedPrompt, modelRecommendation: recommendation, modelResponse };
+  }
+
+  private async routeModel(intent: IntentSignal): Promise<ModelRecommendation> {
+    if (!this.modelRouter || !this.modelUsageAdapter) {
+      throw new Error("Undercurrent: model routing not configured.");
+    }
+
+    const scoringData = await this.modelUsageAdapter.loadScoringData();
+    return this.modelRouter.recommend(intent, scoringData);
+  }
+
+  private trackSession(
+    message: string,
+    conversation: ConversationTurn[],
+    enrichedMessage: string,
+  ): void {
+    if (!this.monitor) return;
+    const health = this.monitor.track(message, conversation, enrichedMessage);
+    this.log("session health", health, this.monitor.getState().estimatedTokens, "tokens");
+  }
+
+  private async maybeCheckpoint(
+    conversation: ConversationTurn[],
+  ): Promise<void> {
+    if (!this.monitor || !this.checkpointer) return;
+
+    const health = this.monitor.getHealth();
+
+    if (health === "critical" || health === "degrading") {
+      try {
+        const compaction = await this.checkpointer.compactAndCheckpoint(
+          this.monitor,
+          conversation,
+          this.lastContext,
+        );
+        this.monitor.resetAfterCompaction(
+          compaction.recentExchanges.reduce(
+            (sum, t) => sum + Math.ceil(t.content.length / 4),
+            0,
+          ),
+        );
+        this.log("session compacted, saved ~", compaction.estimatedTokensSaved, "tokens");
+      } catch {
+        this.log("compaction failed, continuing");
+      }
+      return;
+    }
+
+    if (this.monitor.needsCheckpoint()) {
+      try {
+        await this.checkpointer.checkpoint(this.monitor, conversation);
+        this.log("checkpoint saved");
+      } catch {
+        this.log("checkpoint failed, continuing");
+      }
+    }
   }
 
   /**
