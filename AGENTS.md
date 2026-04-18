@@ -592,7 +592,7 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 ```bash
 npm run build       # tsc → dist/
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run — 182 tests in 20 files
+npm test            # vitest run — 296 tests in 27 files
 npm run start:mcp   # Run the MCP server (requires env vars)
 npm run playground  # Interactive REPL — live pipeline testing (tsx)
 npm run replay      # Batch transcript replay with reports (tsx)

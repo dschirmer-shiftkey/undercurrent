@@ -37,7 +37,7 @@
     }
   },
   "bin": {
-    "undercurrent-mcp": "./dist/mcp/index.js"
+    "undercurrent-mcp": "dist/mcp/index.js"
   },
   "publishConfig": {
     "access": "public"
@@ -71,7 +71,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dschirmer-shiftkey/undercurrent.git"
+    "url": "git+https://github.com/dschirmer-shiftkey/undercurrent.git"
   },
   "homepage": "https://github.com/dschirmer-shiftkey/undercurrent#readme",
   "bugs": {

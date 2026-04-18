@@ -129,6 +129,13 @@ Per-user, per-domain model selection. Komatik-internal first. Configured via `Un
 
 - `npm run build` — TypeScript compiles without errors
 - `npm run typecheck` — type-check only (no emit)
-- `npm test` — 182 tests passing (20 test files: pipeline, scope calibration, default strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server, session monitor, compactor, checkpointer, session lifecycle, model router, model router integration)
+- `npm test` — 296 tests passing (27 test files: pipeline, scope calibration, default strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server, session monitor, compactor, checkpointer, session lifecycle, model router, model router integration, middleware, preference adapter, session writer, memory adapter)
 - `npm run playground` — interactive REPL for live pipeline testing
 - `npm run replay` — batch transcript replay with structured reports
+
+## npm
+
+- **Published**: `@komatik/undercurrent@0.2.0` on npmjs.com (2026-04-18)
+- **Scope**: `@komatik` org (public)
+- **CI release**: `release.yml` uses OIDC Trusted Publishing (`npm publish --provenance`). Triggered on `v*` tags.
+- **Note**: v0.2.0 tag points at `4704904` (pre-OIDC workflow). HEAD has 3 post-tag commits including the OIDC switch. Next release should tag at HEAD.
