@@ -139,4 +139,4 @@ Per-user, per-domain model selection. Komatik-internal first. Configured via `Un
 - **Published**: `@komatik/undercurrent@0.2.0` on npmjs.com (2026-04-18)
 - **Scope**: `@komatik` org (public)
 - **CI release**: `release.yml` uses OIDC Trusted Publishing (`npm publish --provenance`). Triggered on `v*` tags.
-- **Note**: v0.2.0 tag points at `4704904` (pre-OIDC workflow). HEAD has 3 post-tag commits including the OIDC switch. Next release should tag at HEAD.
+- **Note**: v0.2.0 tag points at `4704904` (pre-OIDC workflow). HEAD has 8 post-tag commits (OIDC switch, cleanup, completeness audit, LlmStrategy). Next release should bump to v0.3.0 and tag at HEAD.
