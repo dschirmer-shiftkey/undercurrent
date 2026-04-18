@@ -92,6 +92,29 @@ describe("DefaultStrategy", () => {
       );
       expect(product.scope).toBe("product");
     });
+
+    it("extracts temporal references as raw fragments", async () => {
+      const intent = await strategy.classifyIntent(
+        "use the same approach as last time to fix the auth",
+        [],
+      );
+      expect(intent.rawFragments).toEqual(
+        expect.arrayContaining(["same approach", "last time"]),
+      );
+    });
+
+    it("adds memory domain hint for temporal references", async () => {
+      const intent = await strategy.classifyIntent(
+        "do it like before, same way as we discussed",
+        [],
+      );
+      expect(intent.domainHints).toContain("memory");
+    });
+
+    it("does not add memory domain hint when no temporal references", async () => {
+      const intent = await strategy.classifyIntent("build a new api endpoint for users", []);
+      expect(intent.domainHints).not.toContain("memory");
+    });
   });
 
   describe("analyzeGaps", () => {
@@ -152,6 +175,114 @@ describe("DefaultStrategy", () => {
       );
 
       expect(gaps).toHaveLength(0);
+    });
+
+    it("flags temporal references when no memory context is available", async () => {
+      const intent = await strategy.classifyIntent(
+        "use the same approach as last time",
+        [],
+      );
+      const gaps = await strategy.analyzeGaps(
+        intent,
+        [],
+        "use the same approach as last time",
+      );
+
+      const temporal = gaps.find((g) => g.description.includes("Temporal reference"));
+      expect(temporal).toBeDefined();
+      expect(temporal!.critical).toBe(true);
+    });
+
+    it("does not flag temporal reference when memory context exists", async () => {
+      const memoryLayer: ContextLayer = {
+        source: "komatik-memory",
+        priority: 0,
+        timestamp: Date.now(),
+        data: {},
+        summary: "Active work: refactoring auth module",
+      };
+      const intent = await strategy.classifyIntent(
+        "use the same approach as last time",
+        [],
+      );
+      const gaps = await strategy.analyzeGaps(
+        intent,
+        [memoryLayer],
+        "use the same approach as last time",
+      );
+
+      const temporal = gaps.find((g) => g.description.includes("Temporal reference"));
+      expect(temporal).toBeUndefined();
+    });
+
+    it("flags vague references with single occurrence when no context", async () => {
+      const intent = await strategy.classifyIntent("fix it", []);
+      const gaps = await strategy.analyzeGaps(intent, [], "fix it");
+
+      const vagueGap = gaps.find((g) =>
+        g.description.includes("Ambiguous reference"),
+      );
+      expect(vagueGap).toBeDefined();
+    });
+
+    it("flags expanded vague terms like 'the stuff' and 'the other'", async () => {
+      const intent = await strategy.classifyIntent(
+        "make the stuff do the other",
+        [],
+      );
+      const gaps = await strategy.analyzeGaps(
+        intent,
+        [],
+        "make the stuff do the other",
+      );
+
+      const vagueGap = gaps.find((g) =>
+        g.description.includes("ambiguous") || g.description.includes("Ambiguous"),
+      );
+      expect(vagueGap).toBeDefined();
+    });
+
+    it("flags ultra-terse messages as underspecified", async () => {
+      const intent = await strategy.classifyIntent("add styles", []);
+      const gaps = await strategy.analyzeGaps(intent, [], "add styles");
+
+      const terseGap = gaps.find((g) =>
+        g.description.includes("extremely terse"),
+      );
+      expect(terseGap).toBeDefined();
+      expect(terseGap!.critical).toBe(false);
+    });
+
+    it("does not flag terse gap for messages >= 5 words", async () => {
+      const msg = "add styles to the login page";
+      const intent = await strategy.classifyIntent(msg, []);
+      const gaps = await strategy.analyzeGaps(intent, [], msg);
+
+      const terseGap = gaps.find((g) =>
+        g.description.includes("extremely terse"),
+      );
+      expect(terseGap).toBeUndefined();
+    });
+
+    it("flags missing file reference for unknown action", async () => {
+      const intent = {
+        action: "unknown" as const,
+        specificity: "low" as const,
+        scope: "local" as const,
+        emotionalLoad: "neutral" as const,
+        confidence: 0.5,
+        rawFragments: [],
+        domainHints: [],
+      };
+
+      const gaps = await strategy.analyzeGaps(
+        intent,
+        [],
+        "do the thing with the stuff",
+      );
+
+      const fileGap = gaps.find((g) => g.description.includes("file"));
+      expect(fileGap).toBeDefined();
     });
   });
 

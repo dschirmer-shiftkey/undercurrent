@@ -115,11 +115,18 @@ export interface EnrichedPrompt {
   metadata: EnrichmentMetadata;
 }
 
+export interface AdapterResult {
+  status: "ok" | "empty" | "unavailable" | "error";
+  layerCount: number;
+  error?: string;
+}
+
 export interface EnrichmentMetadata {
   pipelineVersion: string;
   enrichmentDepth: "none" | "light" | "standard" | "deep";
   processingTimeMs: number;
   adapterTimings: Record<string, number>;
+  adapterResults?: Record<string, AdapterResult>;
   strategyUsed: string;
   targetPlatform: TargetPlatform;
   modelRecommendation?: ModelRecommendation;
