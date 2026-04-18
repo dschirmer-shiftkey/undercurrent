@@ -592,7 +592,7 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 ```bash
 npm run build       # tsc → dist/
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run — 296 tests in 27 files
+npm test            # vitest run — 318 tests in 28 files
 npm run start:mcp   # Run the MCP server (requires env vars)
 npm run playground  # Interactive REPL — live pipeline testing (tsx)
 npm run replay      # Batch transcript replay with reports (tsx)
@@ -632,6 +632,7 @@ src/
 │   └── index.ts             # Bin entry (undercurrent-mcp) — reads env vars, stdio transport
 ├── strategies/              # Pluggable enrichment logic
 │   ├── default.ts           # Heuristic (no LLM, deterministic) — reference impl
+│   ├── llm.ts               # LLM-assisted strategy (pluggable llmCall callback, DefaultStrategy fallback)
 │   ├── komatik-pipeline.ts  # Domain-specific (Komatik marketplace enrichment)
 │   └── platform-composer.ts # Platform-aware output formatting (Cursor, Claude, ChatGPT, API, MCP)
 ├── playground/              # Live pipeline test harness (excluded from build, runs via tsx)

@@ -52,7 +52,7 @@ src/
 │   └── testing.ts     Mock client for tests
 ├── strategies/
 │   ├── default.ts     Heuristic strategy (no LLM, deterministic)
-│   ├── default.test.ts
+│   ├── llm.ts         LLM-assisted strategy (pluggable llmCall, DefaultStrategy fallback)
 │   └── komatik-pipeline.ts  Domain-specific (expand-first redesign pending)
 ├── adapters/
 │   ├── conversation.ts  Chat history context
@@ -73,8 +73,9 @@ src/
 
 ## Strategies
 
-Two strategies ship with the SDK:
+Three strategies ship with the SDK:
 - **DefaultStrategy** (`strategies/default.ts`) — heuristic, no LLM, deterministic. This is the reference implementation and the one used in tests.
+- **LlmStrategy** (`strategies/llm.ts`) — LLM-assisted enrichment via pluggable `llmCall: (prompt: string) => Promise<string>` callback. Uses the LLM for intent classification, gap analysis, gap resolution, and composition. Falls back to `DefaultStrategy` heuristics when the LLM is unavailable or returns unparseable output. Skips the LLM for high-confidence high-specificity messages where heuristics are sufficient. JSON parsing is resilient (raw JSON, markdown fenced blocks, embedded JSON in prose). Zero SDK dependencies — consumer brings their own LLM gateway.
 - **KomatikPipelineStrategy** (`strategies/komatik-pipeline.ts`) — domain-specific strategy for the Komatik marketplace pipeline. Detects project domains (ecommerce, SaaS, education, etc.), infers tech stacks, identifies features, and assesses readiness. Supports optional LLM-assisted composition via `llmCall` callback. Has a Yggdrasil (charitable open-source seedling) mode.
 
 ## Komatik Identity Layer
@@ -129,7 +130,7 @@ Per-user, per-domain model selection. Komatik-internal first. Configured via `Un
 
 - `npm run build` — TypeScript compiles without errors
 - `npm run typecheck` — type-check only (no emit)
-- `npm test` — 296 tests passing (27 test files: pipeline, scope calibration, default strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server, session monitor, compactor, checkpointer, session lifecycle, model router, model router integration, middleware, preference adapter, session writer, memory adapter)
+- `npm test` — 318 tests passing (28 test files: pipeline, scope calibration, default strategy, LLM strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server, session monitor, compactor, checkpointer, session lifecycle, model router, model router integration, middleware, preference adapter, session writer, memory adapter)
 - `npm run playground` — interactive REPL for live pipeline testing
 - `npm run replay` — batch transcript replay with structured reports
 

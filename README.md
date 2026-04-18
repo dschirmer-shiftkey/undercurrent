@@ -72,8 +72,9 @@ console.log(result.enrichedMessage);
                     │  │             │                 │  │
                     │  │  ┌──────────▼────────────┐   │  │   Strategies (pluggable)
                     │  │  │  Platform Composer     │   │  │   ├── Default (heuristic)
-                    │  │  │  cursor│claude│chatgpt │   │  │   ├── Komatik Pipeline
-                    │  │  │  api│mcp│generic       │   │  │   └── (your own)
+                    │  │  │  cursor│claude│chatgpt │   │  │   ├── LLM (llmCall callback)
+                    │  │  │  api│mcp│generic       │   │  │   ├── Komatik Pipeline
+                    │  │  │                        │   │  │   └── (your own)
                     │  │  └──────────┬────────────┘   │  │
                     │  └─────────────┼────────────────┘  │
                     │                ▼                    │
@@ -168,8 +169,28 @@ interface EnrichmentStrategy {
 
 Ships with:
 
-- `**DefaultStrategy**` — Heuristic, no LLM, fully deterministic. Same input always produces the same output.
-- `**KomatikPipelineStrategy**` — Domain-specific strategy for the Komatik marketplace. Detects project domains (ecommerce, SaaS, education, etc.), infers tech stacks, identifies features, and assesses readiness. Supports optional LLM-assisted composition via `llmCall` callback.
+- **`DefaultStrategy`** — Heuristic, no LLM, fully deterministic. Same input always produces the same output.
+- **`LlmStrategy`** — LLM-assisted enrichment via a pluggable `llmCall` callback. Uses the LLM for intent classification, gap analysis, gap resolution, and composition. Falls back to `DefaultStrategy` heuristics when the LLM is unavailable or returns unparseable output. Skips the LLM entirely for high-confidence, high-specificity messages where heuristics are sufficient.
+- **`KomatikPipelineStrategy`** — Domain-specific strategy for the Komatik marketplace. Detects project domains (ecommerce, SaaS, education, etc.), infers tech stacks, identifies features, and assesses readiness. Supports optional LLM-assisted composition via `llmCall` callback.
+
+#### LlmStrategy
+
+```ts
+import { LlmStrategy } from "@komatik/undercurrent/strategies";
+
+const strategy = new LlmStrategy({
+  llmCall: async (prompt) => {
+    const response = await myLlmGateway.call({ prompt });
+    return response.text;
+  },
+  maxConversationTurns: 10,        // conversation context window (default: 10)
+  heuristicConfidenceThreshold: 0.8, // skip LLM above this (default: 0.8)
+});
+
+const uc = new Undercurrent({ adapters, strategy });
+```
+
+The `llmCall` callback receives a plain string prompt and must return a plain string response. No SDK dependency — you bring your own LLM gateway (OpenAI, Anthropic, Google, local model, etc.). JSON parsing is resilient: handles raw JSON, markdown-fenced code blocks, and embedded JSON in prose.
 
 ### Platform-Aware Composition
 
@@ -300,6 +321,74 @@ uc.setHooks({
   afterCompose: (result) => metrics.record(result.metadata),
 });
 ```
+
+## Komatik Integration
+
+Full end-to-end wiring for a Komatik product (Triage, Floe, Forge, or the platform). This shows every subsystem connected — identity-aware adapters, LLM strategy, session lifecycle, and model routing:
+
+```ts
+import { Undercurrent } from "@komatik/undercurrent";
+import { ConversationAdapter, GitAdapter, FilesystemAdapter } from "@komatik/undercurrent/adapters";
+import { LlmStrategy } from "@komatik/undercurrent/strategies";
+import {
+  KomatikIdentityAdapter,
+  KomatikPreferenceAdapter,
+  KomatikMemoryAdapter,
+  KomatikHistoryAdapter,
+  KomatikProjectAdapter,
+  KomatikMarketplaceAdapter,
+  KomatikOutcomeAdapter,
+  KomatikSessionWriter,
+} from "@komatik/undercurrent/komatik";
+
+// 1. Identity-aware adapters — generic + Komatik ecosystem
+const adapters = [
+  new ConversationAdapter(),
+  new GitAdapter({ cwd: process.cwd() }),
+  new FilesystemAdapter({ root: "./src" }),
+  new KomatikIdentityAdapter({ client, userId }),
+  new KomatikPreferenceAdapter({ client, userId }),
+  new KomatikMemoryAdapter({ client, userId }),
+  new KomatikHistoryAdapter({ client, userId }),
+  new KomatikProjectAdapter({ client, userId }),
+  new KomatikMarketplaceAdapter({ client, userId }),
+  new KomatikOutcomeAdapter({ client, userId }),
+];
+
+// 2. LLM strategy with the product's existing gateway
+const strategy = new LlmStrategy({
+  llmCall: (prompt) => myLlmGateway.generate(prompt),
+});
+
+// 3. Full pipeline with session lifecycle + model routing
+const uc = new Undercurrent({
+  adapters,
+  strategy,
+  targetPlatform: "cursor",
+  sessionMonitor: {
+    userId,
+    writer: new KomatikSessionWriter({ client, userId }),
+    compactorLlmCall: (prompt) => myLlmGateway.generate(prompt),
+  },
+  modelRouter: {
+    enabled: true,
+    caller: (input) => myLlmGateway.call(input),
+    userId,
+    client,
+  },
+});
+
+// 4. Enrich only (strategy picks model externally)
+const enriched = await uc.enrich({ message, conversation });
+
+// 5. Full process — enrich + route model + call LLM
+const result = await uc.process({ message, conversation });
+// result.enrichedPrompt — the enriched context
+// result.modelRecommendation — which model was selected and why
+// result.modelResponse — the LLM's response
+```
+
+The `client` is any object implementing `KomatikDataClient` — the interface matches Supabase's query builder, so you can pass your existing Supabase client directly. For the MCP server, a lightweight `PostgREST` client is available that uses native `fetch` instead.
 
 ## Design Principles
 
