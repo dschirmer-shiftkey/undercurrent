@@ -24,7 +24,7 @@ import { ModelRouter } from "./model-router.js";
 import { KomatikModelUsageAdapter } from "../komatik/model-usage-adapter.js";
 import { SessionMonitor } from "./session-monitor.js";
 
-const PIPELINE_VERSION = "0.1.0";
+const PIPELINE_VERSION = "0.2.0";
 
 type EnrichmentDepth = EnrichmentMetadata["enrichmentDepth"];
 

@@ -8,6 +8,7 @@ export { KomatikMemoryAdapter } from "./memory-adapter.js";
 export { KomatikSessionWriter } from "./session-writer.js";
 export { KomatikModelUsageAdapter } from "./model-usage-adapter.js";
 export type { KomatikModelUsageAdapterOptions } from "./model-usage-adapter.js";
+export { createMockClient } from "./testing.js";
 
 export type {
   KomatikDataClient,
