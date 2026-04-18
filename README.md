@@ -162,7 +162,7 @@ interface EnrichmentStrategy {
   classifyIntent(message: string, conversation: ConversationTurn[]): Promise<IntentSignal>;
   analyzeGaps(intent: IntentSignal, context: ContextLayer[], message: string): Promise<Gap[]>;
   resolveGap(gap: Gap, context: ContextLayer[], threshold: number): Promise<GapResolution>;
-  compose(message: string, intent: IntentSignal, context: ContextLayer[], assumptions: Assumption[], gaps: Gap[]): Promise<string>;
+  compose(message: string, intent: IntentSignal, context: ContextLayer[], assumptions: Assumption[], resolvedGaps: Gap[]): Promise<string>;
 }
 ```
 

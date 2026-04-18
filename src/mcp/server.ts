@@ -49,7 +49,7 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
   });
 
   const server = new McpServer(
-    { name: "undercurrent", version: "0.1.0" },
+    { name: "undercurrent", version: "0.2.0" },
     { capabilities: { logging: {} } },
   );
 

@@ -32,7 +32,7 @@ describe("Pipeline", () => {
     expect(result.originalMessage).toBe("fix the login bug on line 42 of auth.ts");
     expect(result.intent.action).toBe("fix");
     expect(result.metadata.strategyUsed).toBe("default");
-    expect(result.metadata.pipelineVersion).toBe("0.1.0");
+    expect(result.metadata.pipelineVersion).toBe("0.2.0");
     expect(result.metadata.processingTimeMs).toBeGreaterThan(0);
   });
 
