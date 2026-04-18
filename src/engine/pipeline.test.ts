@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { Pipeline } from "./pipeline.js";
 import { DefaultStrategy } from "../strategies/default.js";
-import type { ContextAdapter, ContextLayer, EnrichedPrompt, UndercurrentConfig } from "../types.js";
+import type {
+  ContextAdapter,
+  ContextLayer,
+  EnrichedPrompt,
+  UndercurrentConfig,
+} from "../types.js";
 
 function makeConfig(overrides: Partial<UndercurrentConfig> = {}): UndercurrentConfig {
   return {
@@ -195,5 +200,134 @@ describe("Pipeline", () => {
 
     expect(result.context[0].source).toBe("high-priority");
     expect(result.context[1].source).toBe("low-priority");
+  });
+
+  describe("adapter result tracking", () => {
+    it("reports 'ok' for adapters that return layers", async () => {
+      const layer: ContextLayer = {
+        source: "good-adapter",
+        priority: 1,
+        timestamp: Date.now(),
+        data: { branch: "main" },
+        summary: "On main branch",
+      };
+      const adapter = stubAdapter("good-adapter", [layer]);
+      const pipeline = new Pipeline(makeConfig({ adapters: [adapter] }));
+
+      const result = await pipeline.enrich({ message: "something is off with the api" });
+
+      expect(result.metadata.adapterResults).toBeDefined();
+      expect(result.metadata.adapterResults!["good-adapter"]).toEqual({
+        status: "ok",
+        layerCount: 1,
+      });
+    });
+
+    it("reports 'empty' for adapters that return zero layers", async () => {
+      const adapter = stubAdapter("empty-adapter", []);
+      const pipeline = new Pipeline(makeConfig({ adapters: [adapter] }));
+
+      const result = await pipeline.enrich({ message: "something is off with the api" });
+
+      expect(result.metadata.adapterResults!["empty-adapter"]).toEqual({
+        status: "empty",
+        layerCount: 0,
+      });
+    });
+
+    it("reports 'unavailable' for adapters where available() returns false", async () => {
+      const adapter = stubAdapter("dead-adapter", [], { available: false });
+      const pipeline = new Pipeline(makeConfig({ adapters: [adapter] }));
+
+      const result = await pipeline.enrich({ message: "something is off with the api" });
+
+      expect(result.metadata.adapterResults!["dead-adapter"]).toEqual({
+        status: "unavailable",
+        layerCount: 0,
+      });
+    });
+
+    it("reports 'error' for adapters that throw during gather()", async () => {
+      const failing: ContextAdapter = {
+        name: "failing-adapter",
+        priority: 1,
+        available: async () => true,
+        gather: async () => {
+          throw new Error("db connection lost");
+        },
+      };
+      const pipeline = new Pipeline(makeConfig({ adapters: [failing] }));
+
+      const result = await pipeline.enrich({ message: "check the deploy pipeline" });
+
+      expect(result.metadata.adapterResults!["failing-adapter"]).toEqual({
+        status: "error",
+        layerCount: 0,
+        error: "db connection lost",
+      });
+    });
+
+    it("reports 'error' for adapters that throw during available()", async () => {
+      const broken: ContextAdapter = {
+        name: "broken-adapter",
+        priority: 1,
+        available: async () => {
+          throw new Error("init failed");
+        },
+        gather: async () => [],
+      };
+      const pipeline = new Pipeline(makeConfig({ adapters: [broken] }));
+
+      const result = await pipeline.enrich({ message: "check the deploy pipeline" });
+
+      expect(result.metadata.adapterResults!["broken-adapter"]).toEqual({
+        status: "error",
+        layerCount: 0,
+        error: "availability check failed: init failed",
+      });
+    });
+
+    it("tracks results for mixed adapter states", async () => {
+      const okLayer: ContextLayer = {
+        source: "ok-adapter",
+        priority: 1,
+        timestamp: Date.now(),
+        data: {},
+        summary: "good data",
+      };
+      const ok = stubAdapter("ok-adapter", [okLayer]);
+      const empty = stubAdapter("empty-adapter", []);
+      const unavail = stubAdapter("unavail-adapter", [], { available: false });
+      const failing: ContextAdapter = {
+        name: "failing-adapter",
+        priority: 1,
+        available: async () => true,
+        gather: async () => {
+          throw new Error("timeout");
+        },
+      };
+
+      const pipeline = new Pipeline(
+        makeConfig({ adapters: [ok, empty, unavail, failing] }),
+      );
+      const result = await pipeline.enrich({ message: "something is off with the api" });
+
+      const ar = result.metadata.adapterResults!;
+      expect(ar["ok-adapter"].status).toBe("ok");
+      expect(ar["empty-adapter"].status).toBe("empty");
+      expect(ar["unavail-adapter"].status).toBe("unavailable");
+      expect(ar["failing-adapter"].status).toBe("error");
+    });
+
+    it("omits adapterResults from passthrough (depth=none) enrichments", async () => {
+      const pipeline = new Pipeline(makeConfig());
+      const result = await pipeline.enrich({
+        message:
+          "fix the `calculateTotal` function on line 15 of utils.ts — it returns NaN",
+      });
+
+      expect(result.metadata.enrichmentDepth).toBe("none");
+      expect(result.metadata.adapterResults).toBeUndefined();
+    });
   });
 });

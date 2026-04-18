@@ -45,9 +45,32 @@ export class DefaultStrategy implements EnrichmentStrategy {
     message: string,
   ): Promise<Gap[]> {
     const gaps: Gap[] = [];
+    const lower = message.toLowerCase();
+    const words = lower.split(/\s+/);
+    const hasMemoryContext = context.some(
+      (c) => c.source === "komatik-memory" || c.source === "conversation",
+    );
+
+    // ── Temporal/memory reference detection ────────────────────────────
+    const temporalPattern =
+      /\b(last time|same (approach|way|thing|method|pattern)|as before|like before|previous(ly)?|again the same|as we discussed|as usual|remember when|like we did|like last)\b/i;
+    if (temporalPattern.test(message) && !hasMemoryContext) {
+      gaps.push({
+        id: randomUUID(),
+        description:
+          "Temporal reference without resolvable context — refers to prior interaction or decision",
+        critical: true,
+        resolution: null,
+      });
+    }
 
     if (intent.specificity !== "high") {
-      if (intent.action === "build" || intent.action === "fix") {
+      // ── Missing file/location reference ──────────────────────────────
+      if (
+        intent.action === "build" ||
+        intent.action === "fix" ||
+        intent.action === "unknown"
+      ) {
         const hasFileRef = /(?:\w+\.\w{1,5}|\/\w+|line\s+\d+)/i.test(message);
         if (!hasFileRef) {
           gaps.push({
@@ -59,6 +82,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
         }
       }
 
+      // ── Scope ambiguity ──────────────────────────────────────────────
       if (intent.scope === "unknown" || intent.scope === "cross-system") {
         gaps.push({
           id: randomUUID(),
@@ -68,11 +92,30 @@ export class DefaultStrategy implements EnrichmentStrategy {
         });
       }
 
-      const pronouns = (message.match(/\b(it|this|that|those|these|the thing)\b/gi) ?? []).length;
-      if (pronouns >= 2 && context.length === 0) {
+      // ── Vague/ambiguous references ───────────────────────────────────
+      const vagueRefs = (
+        message.match(
+          /\b(it|this|that|those|these|the thing|the stuff|that thing|the other|that other)\b/gi,
+        ) ?? []
+      ).length;
+      const vagueThreshold = context.length > 0 ? 2 : 1;
+      if (vagueRefs >= vagueThreshold) {
         gaps.push({
           id: randomUUID(),
-          description: "Multiple ambiguous references (pronouns without clear antecedents)",
+          description:
+            vagueRefs >= 2
+              ? "Multiple ambiguous references (pronouns without clear antecedents)"
+              : "Ambiguous reference without supporting context to resolve it",
+          critical: false,
+          resolution: null,
+        });
+      }
+
+      // ── Ultra-terse message ──────────────────────────────────────────
+      if (words.length < 5) {
+        gaps.push({
+          id: randomUUID(),
+          description: "Message is extremely terse — action target unclear",
           critical: false,
           resolution: null,
         });
@@ -278,6 +321,11 @@ export class DefaultStrategy implements EnrichmentStrategy {
     const filePaths = message.match(/\b[\w./\\-]+\.\w{1,5}\b/g);
     if (filePaths) fragments.push(...filePaths);
 
+    const temporalRefs = message.match(
+      /\b(last time|same (?:approach|way|thing|method|pattern)|as before|like before|previously|as we discussed|as usual|remember when|like we did|like last)\b/gi,
+    );
+    if (temporalRefs) fragments.push(...temporalRefs.map((r) => r.toLowerCase()));
+
     return [...new Set(fragments)];
   }
 
@@ -292,6 +340,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
       testing: /\b(test|spec|assert|mock|fixture|e2e|unit|integration)\b/i,
       security: /\b(security|rls|permission|role|encrypt|vulnerability|xss|csrf)\b/i,
       payment: /\b(payment|stripe|billing|subscription|invoice|checkout)\b/i,
+      memory: /\b(last time|same (?:approach|way|thing|method|pattern)|as before|like before|previous(?:ly)?|as we discussed|as usual|remember when|like we did|like last)\b/i,
     };
 
     for (const [domain, pattern] of Object.entries(domainTerms)) {

@@ -13,27 +13,39 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
-      "import": "./dist/adapters/index.js"
+      "import": "./dist/adapters/index.js",
+      "require": "./dist/adapters/index.js",
+      "default": "./dist/adapters/index.js"
     },
     "./strategies": {
       "types": "./dist/strategies/index.d.ts",
-      "import": "./dist/strategies/index.js"
+      "import": "./dist/strategies/index.js",
+      "require": "./dist/strategies/index.js",
+      "default": "./dist/strategies/index.js"
     },
     "./transports": {
       "types": "./dist/transports/index.d.ts",
-      "import": "./dist/transports/index.js"
+      "import": "./dist/transports/index.js",
+      "require": "./dist/transports/index.js",
+      "default": "./dist/transports/index.js"
     },
     "./komatik": {
       "types": "./dist/komatik/index.d.ts",
-      "import": "./dist/komatik/index.js"
+      "import": "./dist/komatik/index.js",
+      "require": "./dist/komatik/index.js",
+      "default": "./dist/komatik/index.js"
     },
     "./mcp": {
       "types": "./dist/mcp/server.d.ts",
-      "import": "./dist/mcp/server.js"
+      "import": "./dist/mcp/server.js",
+      "require": "./dist/mcp/server.js",
+      "default": "./dist/mcp/server.js"
     }
   },
   "bin": {

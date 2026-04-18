@@ -68,6 +68,7 @@ export { ModelRouter, TaskDomainClassifier, ModelScorer } from "./engine/model-r
 export type {
   Action,
   AdapterInput,
+  AdapterResult,
   Assumption,
   Clarification,
   ClarificationOption,

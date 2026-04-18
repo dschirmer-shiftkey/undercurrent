@@ -1,4 +1,5 @@
 import type {
+  AdapterResult,
   Assumption,
   ContextAdapter,
   ContextLayer,
@@ -147,7 +148,7 @@ export class Pipeline {
 
     // ── Stage 2: Context Harvesting ──────────────────────────────────────
     this.hooks.beforeGather?.(intent);
-    const harvested = await this.harvestContext(
+    const { layers: harvested, adapterResults } = await this.harvestContext(
       input.message,
       intent,
       conversation,
@@ -197,6 +198,7 @@ export class Pipeline {
         enrichmentDepth: depth,
         processingTimeMs: performance.now() - start,
         adapterTimings,
+        adapterResults,
         strategyUsed: this.strategy.name,
         targetPlatform: platform,
       },
@@ -375,14 +377,24 @@ export class Pipeline {
     conversation: ConversationTurn[],
     timings: Record<string, number>,
     enrichmentContext?: Record<string, unknown>,
-  ): Promise<ContextLayer[]> {
+  ): Promise<{ layers: ContextLayer[]; adapterResults: Record<string, AdapterResult> }> {
+    const adapterResults: Record<string, AdapterResult> = {};
+
     const available = await Promise.all(
       this.adapters.map(async (adapter) => {
         try {
           const ok = await adapter.available();
+          if (!ok) {
+            adapterResults[adapter.name] = { status: "unavailable", layerCount: 0 };
+          }
           return ok ? adapter : null;
-        } catch {
+        } catch (err) {
           this.log(`adapter ${adapter.name} availability check failed`);
+          adapterResults[adapter.name] = {
+            status: "error",
+            layerCount: 0,
+            error: `availability check failed: ${err instanceof Error ? err.message : String(err)}`,
+          };
           return null;
         }
       }),
@@ -407,18 +419,29 @@ export class Pipeline {
             `adapter:${adapter.name}`,
           );
           timings[adapter.name] = performance.now() - adapterStart;
+          adapterResults[adapter.name] = {
+            status: layers.length > 0 ? "ok" : "empty",
+            layerCount: layers.length,
+          };
           return layers;
         } catch (err) {
           timings[adapter.name] = performance.now() - adapterStart;
           this.log(`adapter ${adapter.name} failed`, err);
+          adapterResults[adapter.name] = {
+            status: "error",
+            layerCount: 0,
+            error: err instanceof Error ? err.message : String(err),
+          };
           return [] as ContextLayer[];
         }
       }),
     );
 
-    return results
+    const layers = results
       .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
       .sort((a, b) => a.priority - b.priority);
+
+    return { layers, adapterResults };
   }
 
   private async resolveGaps(gaps: Gap[], context: ContextLayer[]): Promise<Gap[]> {
