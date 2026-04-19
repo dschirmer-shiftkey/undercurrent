@@ -53,7 +53,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
 
     // ── Temporal/memory reference detection ────────────────────────────
     const temporalPattern =
-      /\b(last time|same (approach|way|thing|method|pattern)|as before|like before|previous(ly)?|again the same|as we discussed|as usual|remember when|like we did|like last)\b/i;
+      /\b(last time|same (approach|way|thing|method|pattern)|as before|like before|previous(ly)?|again the same|as we discussed|what we discussed|what we talked about|mentioned (earlier|before|previously)|as usual|remember when|like we did|like last|we agreed|you (said|suggested|recommended))\b/i;
     if (temporalPattern.test(message) && !hasMemoryContext) {
       gaps.push({
         id: randomUUID(),
@@ -69,6 +69,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
       if (
         intent.action === "build" ||
         intent.action === "fix" ||
+        intent.action === "design" ||
         intent.action === "unknown"
       ) {
         const hasFileRef = /(?:\w+\.\w{1,5}|\/\w+|line\s+\d+)/i.test(message);
@@ -239,12 +240,17 @@ export class DefaultStrategy implements EnrichmentStrategy {
 
   private classifyAction(lower: string, words: string[]): Action {
     const actionSignals: Record<Action, RegExp[]> = {
-      build: [/\b(build|create|make|add|implement|set up|scaffold|generate|write)\b/],
-      fix: [/\b(fix|bug|broken|error|issue|wrong|doesn'?t work|failing|crash)\b/],
-      explore: [/\b(how|what|where|why|explain|show|understand|look at|check)\b/],
-      design: [/\b(design|architect|plan|structure|approach|strategy|layout)\b/],
-      discuss: [/\b(think|idea|opinion|thoughts?|consider|what if|should we)\b/],
-      decide: [/\b(decide|choose|pick|which|or|vs|better|option|trade-?off)\b/],
+      build: [
+        /\b(build|create|make|add|implement|set up|scaffold|generate|write)\b/,
+        /\b(refactor|update|change|modify|rename|move|replace|swap|convert|migrate)\b/,
+        /\b(optimize|improve|clean ?up|remove|delete|extract|split|merge|rewrite)\b/,
+        /\b(deploy|ship|publish|release|install|configure|enable|disable|wire|connect)\b/,
+      ],
+      fix: [/\b(fix|bug|broken|error|issue|wrong|doesn'?t work|failing|crash|not working)\b/],
+      explore: [/\b(how|what|where|why|explain|show me|understand|look at|check|describe|tell me)\b/],
+      design: [/\b(design|architect|plan|structure|approach|strategy|layout|propose|draft)\b/],
+      discuss: [/\b(think|idea|opinion|thoughts?|consider|what if|should we|weigh|compare)\b/],
+      decide: [/\b(decide|choose|pick|which|better|option|trade-?off)\b/],
       vent: [/\b(frustrated|annoying|hate|ugh|terrible|awful|ridiculous|stupid)\b/],
       unknown: [],
     };
@@ -274,6 +280,21 @@ export class DefaultStrategy implements EnrichmentStrategy {
     if (words.length < 8) score -= 2;
     if (/\b(idea|thing|stuff|something|somehow|whatever)\b/.test(lower)) score -= 2;
     if (/\b(i think|maybe|kind of|sort of|like)\b/.test(lower)) score -= 1;
+
+    const namedComponents =
+      /\b(the\s+)?(auth(entication|orization)?|user|admin|api|database|payment|checkout|settings|profile|dashboard|navigation|notification|sidebar|header|footer|modal|form|table|list|editor|router|middleware|controller|service|handler|adapter|provider|context|store|reducer|hook|component|module|schema|model|migration|plugin|worker|queue|cache|proxy|gateway|pipeline|engine|registration|login|signup|subscription|verification|deployment|configuration)\s+(module|component|service|function|class|hook|page|route|panel|layer|adapter|system|handler|manager|provider|controller|store|table|middleware|query|schema|form|modal|worker|pipeline|engine)\b/i;
+    if (namedComponents.test(lower)) score += 2;
+
+    const componentTypeAlone =
+      /\b(the\s+(\w+\s+){0,3})(middleware|service|module|component|handler|controller|provider|adapter|pipeline|gateway|proxy|reducer|store|schema|migration|endpoint|route|webhook|worker|queue)\b/i;
+    if (componentTypeAlone.test(lower)) score += 1;
+
+    const transformSignal =
+      /\b(instead of|rather than|replace .+ with|from .+ to|convert .+ to|switch .+ to|migrate .+ to)\b/i;
+    if (transformSignal.test(lower)) score += 1;
+
+    const featureEnumeration = lower.match(/,\s*(and\s+)?/g);
+    if (featureEnumeration && featureEnumeration.length >= 2) score += 1;
 
     if (score >= 4) return "high";
     if (score >= 1) return "medium";
@@ -322,7 +343,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
     if (filePaths) fragments.push(...filePaths);
 
     const temporalRefs = message.match(
-      /\b(last time|same (?:approach|way|thing|method|pattern)|as before|like before|previously|as we discussed|as usual|remember when|like we did|like last)\b/gi,
+      /\b(last time|same (?:approach|way|thing|method|pattern)|as before|like before|previously|as we discussed|what we discussed|what we talked about|mentioned (?:earlier|before|previously)|as usual|remember when|like we did|like last|we agreed|you (?:said|suggested|recommended))\b/gi,
     );
     if (temporalRefs) fragments.push(...temporalRefs.map((r) => r.toLowerCase()));
 
@@ -340,7 +361,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
       testing: /\b(test|spec|assert|mock|fixture|e2e|unit|integration)\b/i,
       security: /\b(security|rls|permission|role|encrypt|vulnerability|xss|csrf)\b/i,
       payment: /\b(payment|stripe|billing|subscription|invoice|checkout)\b/i,
-      memory: /\b(last time|same (?:approach|way|thing|method|pattern)|as before|like before|previous(?:ly)?|as we discussed|as usual|remember when|like we did|like last)\b/i,
+      memory: /\b(last time|same (?:approach|way|thing|method|pattern)|as before|like before|previous(?:ly)?|as we discussed|what we discussed|what we talked about|mentioned (?:earlier|before|previously)|as usual|remember when|like we did|like last|we agreed|you (?:said|suggested|recommended))\b/i,
     };
 
     for (const [domain, pattern] of Object.entries(domainTerms)) {
