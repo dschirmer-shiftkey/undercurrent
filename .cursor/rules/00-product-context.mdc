@@ -116,6 +116,23 @@ Invisible context management that eliminates the "session tax". Configured via `
 - **KomatikSessionWriter** — concrete persistence to Komatik's `session_memories` table
 - Pipeline auto-restores context on cold starts, auto-compacts on degradation
 
+## Adapter Result Tracking
+
+Per-adapter status reporting in `EnrichmentMetadata.adapterResults`:
+- Every adapter reports status after harvest: `ok` (returned layers), `empty` (zero layers), `unavailable` (available() false), `error` (threw)
+- `AdapterResult` type exported from `@komatik/undercurrent`: `{ status, layerCount, error? }`
+- Omitted for `depth: "none"` passthrough enrichments
+- Used by Komatik integration for debugging visibility
+
+## Expanded Gap Analysis Heuristics
+
+`DefaultStrategy` improvements discovered during live Komatik integration testing:
+- Temporal/memory references: "last time", "same approach", "as before" flagged as critical gaps when no memory context exists
+- Vague references: single ambiguous pronoun ("it", "the thing", "the stuff") flagged when no context to resolve
+- Ultra-terse messages: <5 words flagged as underspecified (non-critical)
+- File references: now detected for `unknown` action intents (not just `build`/`fix`)
+- `"memory"` domain hint added for temporal reference patterns
+
 ## Intelligent Model Router
 
 Per-user, per-domain model selection. Komatik-internal first. Configured via `UndercurrentConfig.modelRouter`.
@@ -130,7 +147,7 @@ Per-user, per-domain model selection. Komatik-internal first. Configured via `Un
 
 - `npm run build` — TypeScript compiles without errors
 - `npm run typecheck` — type-check only (no emit)
-- `npm test` — 318 tests passing (28 test files: pipeline, scope calibration, default strategy, LLM strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server, session monitor, compactor, checkpointer, session lifecycle, model router, model router integration, middleware, preference adapter, session writer, memory adapter)
+- `npm test` — 335 tests passing (28 test files: pipeline, scope calibration, default strategy, LLM strategy, platform composer, 7 Komatik adapters, integration, PostgREST client, MCP server, session monitor, compactor, checkpointer, session lifecycle, model router, model router integration, middleware, preference adapter, session writer, memory adapter)
 - `npm run playground` — interactive REPL for live pipeline testing
 - `npm run replay` — batch transcript replay with structured reports
 
@@ -139,4 +156,5 @@ Per-user, per-domain model selection. Komatik-internal first. Configured via `Un
 - **Published**: `@komatik/undercurrent@0.2.0` on npmjs.com (2026-04-18)
 - **Scope**: `@komatik` org (public)
 - **CI release**: `release.yml` uses OIDC Trusted Publishing (`npm publish --provenance`). Triggered on `v*` tags.
-- **Note**: v0.2.0 tag points at `4704904` (pre-OIDC workflow). HEAD has 8 post-tag commits (OIDC switch, cleanup, completeness audit, LlmStrategy). Next release should bump to v0.3.0 and tag at HEAD.
+- **Note**: v0.2.0 tag points at `4704904` (pre-OIDC workflow). HEAD has 9 post-tag commits (OIDC switch, cleanup, completeness audit, LlmStrategy, pipeline deficiency fixes). Next release should bump to v0.3.0 and tag at HEAD.
+- **CJS compat**: All `package.json` export paths include `require` and `default` conditions alongside `import`, enabling `eval('require')` consumers (Turbopack workarounds).

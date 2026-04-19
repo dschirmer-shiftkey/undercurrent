@@ -437,6 +437,7 @@ undercurrent/
 │   │   └── testing.ts                # createMockClient() for tests
 │   ├── strategies/
 │   │   ├── default.ts                # Heuristic (no LLM, deterministic) — reference impl
+│   │   ├── llm.ts                    # LLM-assisted (pluggable llmCall, DefaultStrategy fallback)
 │   │   ├── komatik-pipeline.ts       # Domain-specific Komatik marketplace enrichment
 │   │   └── platform-composer.ts      # Platform-aware output formatting (6 targets)
 │   ├── mcp/                          # External MCP server (@komatik/undercurrent/mcp)
@@ -464,7 +465,7 @@ undercurrent/
 npm install          # Install dependencies
 npm run build        # TypeScript → dist/
 npm run typecheck    # Type-check only (no emit)
-npm test             # 296 tests across 27 files
+npm test             # 335 tests across 28 files
 npm run dev          # Watch mode (tsc --watch)
 npm run start:mcp    # Run the MCP server
 ```

@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `AdapterResult` type — per-adapter status tracking (`ok`/`empty`/`unavailable`/`error`) in `EnrichmentMetadata.adapterResults`
+- Temporal/memory reference detection in `DefaultStrategy.analyzeGaps()` — flags "last time", "same approach", "as before" when no memory context exists
+- Vague pronoun detection threshold lowered — flags single ambiguous references when no supporting context exists
+- Ultra-terse message flagging — messages under 5 words are flagged as underspecified
+- File-reference gap detection for `unknown` action intents
+- `"memory"` domain hint in `extractDomainHints()` for temporal references
+- Temporal phrase extraction in `extractKeyFragments()`
+- Comprehensive tests for adapter result tracking and expanded gap analysis heuristics
+
+### Changed
+- `package.json` exports now include `require` and `default` conditions for CJS compatibility (enables `eval('require')` consumers like Turbopack workarounds)
+- Pipeline `harvestContext()` returns `adapterResults` alongside layers
+
 ## [0.2.0] - 2026-04-17
 
 ### Added
