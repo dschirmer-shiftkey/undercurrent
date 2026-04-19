@@ -34,7 +34,7 @@ import type { ContextAdapter, ContextLayer } from "../types.js";
 
 ## Zero External Dependencies
 
-The core SDK has zero runtime dependencies (only `node:*` built-ins). `devDependencies`: `typescript`, `vitest`, `@types/node`, `tsx` (for playground scripts). New features must not add runtime deps unless explicitly approved.
+The core SDK has zero runtime dependencies (only `node:*` built-ins). `devDependencies`: `typescript`, `vitest`, `@types/node`, `tsx` (for playground scripts), `@modelcontextprotocol/sdk` + `zod` (also peer deps, in devDeps for CI typecheck). New features must not add runtime deps unless explicitly approved.
 
 ## Naming
 
@@ -56,6 +56,6 @@ The core SDK has zero runtime dependencies (only `node:*` built-ins). `devDepend
 
 - `npm run build` — TypeScript compile to `dist/`
 - `npm run typecheck` — type-check without emit
-- `npm test` — vitest run (108 tests across 14 files)
+- `npm test` — vitest run (341 tests across 28 files)
 - `npm run playground` — interactive REPL for live pipeline testing (runs via tsx, not compiled)
 - `npm run replay` — batch transcript replay with structured reports (runs via tsx, not compiled)
