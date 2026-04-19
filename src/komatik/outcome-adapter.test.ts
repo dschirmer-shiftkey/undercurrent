@@ -83,15 +83,17 @@ describe("KomatikOutcomeAdapter", () => {
 
     const layer = layers[0]!;
     expect(layer.source).toBe("komatik-outcomes");
-    expect(layer.summary).toContain("3 recent enrichments");
+    expect(layer.summary).toContain("3 judged enrichments");
     expect(layer.summary).toContain("1 accepted");
     expect(layer.summary).toContain("1 revised");
     expect(layer.summary).toContain("1 rejected");
     expect(layer.summary).toContain("33% acceptance");
     expect(layer.summary).toContain("wrong scope assumed");
 
-    const stats = (layer.data as { stats: { totalCorrected: number } }).stats;
+    const stats = (layer.data as { stats: { totalCorrected: number; judged: number; telemetryOnly: number } }).stats;
     expect(stats.totalCorrected).toBe(3);
+    expect(stats.judged).toBe(3);
+    expect(stats.telemetryOnly).toBe(0);
   });
 
   it("returns empty layers when no outcomes exist", async () => {
@@ -131,8 +133,61 @@ describe("KomatikOutcomeAdapter", () => {
     const layers = await adapter.gather(stubInput);
 
     expect(layers).toHaveLength(1);
+    expect(layers[0]!.summary).toContain("1 judged enrichments");
     expect(layers[0]!.summary).toContain("100% acceptance");
     expect(layers[0]!.summary).not.toContain("Frequent corrections");
+  });
+
+  it("handles telemetry-only rows with null verdict", async () => {
+    const client = createMockClient({
+      enrichment_outcomes: [
+        {
+          id: "out-t1",
+          user_id: "user-3",
+          enrichment_id: null,
+          original_message: "help me",
+          enriched_message: "[Original]: help me...",
+          strategy_used: "default",
+          enrichment_depth: "standard",
+          verdict: null,
+          assumptions_accepted: [],
+          assumptions_corrected: [],
+          correction_details: {},
+          platform: null,
+          session_id: null,
+          created_at: "2026-04-18T12:00:00Z",
+        },
+        {
+          id: "out-t2",
+          user_id: "user-3",
+          enrichment_id: "enr-1",
+          original_message: "fix auth",
+          enriched_message: "[Original]: fix auth...",
+          strategy_used: "default",
+          enrichment_depth: "deep",
+          verdict: "accepted",
+          assumptions_accepted: [],
+          assumptions_corrected: [],
+          correction_details: {},
+          platform: "cursor",
+          session_id: null,
+          created_at: "2026-04-18T10:00:00Z",
+        },
+      ],
+    });
+
+    const adapter = new KomatikOutcomeAdapter({ client, userId: "user-3" });
+    const layers = await adapter.gather(stubInput);
+    expect(layers).toHaveLength(1);
+
+    const layer = layers[0]!;
+    expect(layer.summary).toContain("1 judged enrichments");
+    expect(layer.summary).toContain("1 telemetry-only");
+    expect(layer.summary).toContain("100% acceptance");
+
+    const stats = (layer.data as { stats: { judged: number; telemetryOnly: number } }).stats;
+    expect(stats.judged).toBe(1);
+    expect(stats.telemetryOnly).toBe(1);
   });
 
   it("reports unavailable when userId is empty", async () => {

@@ -115,6 +115,47 @@ describe("DefaultStrategy", () => {
       const intent = await strategy.classifyIntent("build a new api endpoint for users", []);
       expect(intent.domainHints).not.toContain("memory");
     });
+
+    it("classifies refactor/update/optimize/remove as build action", async () => {
+      const cases = [
+        { msg: "refactor the auth module to use JWT tokens", expected: "build" },
+        { msg: "update the styles to use the new design system", expected: "build" },
+        { msg: "optimize the database query in the user service", expected: "build" },
+        { msg: "remove the old authentication middleware", expected: "build" },
+        { msg: "deploy the staging branch to production", expected: "build" },
+        { msg: "migrate the users table to the new schema", expected: "build" },
+        { msg: "rename the component from UserCard to ProfileCard", expected: "build" },
+      ];
+      for (const { msg, expected } of cases) {
+        const intent = await strategy.classifyIntent(msg, []);
+        expect(intent.action, `"${msg}" should classify as ${expected}`).toBe(expected);
+      }
+    });
+
+    it("boosts specificity for named architectural components", async () => {
+      const intent = await strategy.classifyIntent(
+        "refactor the auth module to use JWT tokens instead of sessions",
+        [],
+      );
+      expect(["medium", "high"]).toContain(intent.specificity);
+    });
+
+    it("boosts specificity for feature enumerations", async () => {
+      const intent = await strategy.classifyIntent(
+        "Build a user registration form with email verification, password strength meter, and social login",
+        [],
+      );
+      expect(["medium", "high"]).toContain(intent.specificity);
+    });
+
+    it("detects 'what we discussed' as temporal reference", async () => {
+      const intent = await strategy.classifyIntent(
+        "Can you update the styles to match what we discussed?",
+        [],
+      );
+      expect(intent.rawFragments).toEqual(expect.arrayContaining(["what we discussed"]));
+      expect(intent.domainHints).toContain("memory");
+    });
   });
 
   describe("analyzeGaps", () => {
@@ -188,6 +229,21 @@ describe("DefaultStrategy", () => {
         "use the same approach as last time",
       );
 
+      const temporal = gaps.find((g) => g.description.includes("Temporal reference"));
+      expect(temporal).toBeDefined();
+      expect(temporal!.critical).toBe(true);
+    });
+
+    it("flags 'what we discussed' as temporal reference", async () => {
+      const intent = await strategy.classifyIntent(
+        "Can you update the styles to match what we discussed?",
+        [],
+      );
+      const gaps = await strategy.analyzeGaps(
+        intent,
+        [],
+        "Can you update the styles to match what we discussed?",
+      );
       const temporal = gaps.find((g) => g.description.includes("Temporal reference"));
       expect(temporal).toBeDefined();
       expect(temporal!.critical).toBe(true);

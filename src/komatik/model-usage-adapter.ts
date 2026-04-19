@@ -138,6 +138,7 @@ export class KomatikModelUsageAdapter implements ContextAdapter {
     const byPlatform = new Map<string, { accepted: number; corrected: number; total: number }>();
 
     for (const row of data as Record<string, unknown>[]) {
+      if (row.verdict == null) continue;
       const platform = (row.platform as string) ?? "unknown";
       const entry = byPlatform.get(platform) ?? { accepted: 0, corrected: 0, total: 0 };
 

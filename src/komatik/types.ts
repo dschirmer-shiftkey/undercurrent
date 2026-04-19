@@ -313,6 +313,7 @@ export interface UserPreferences {
   code_style: CodeStylePreferences;
   always_assume: string[];
   never_assume: string[];
+  undercurrent_settings: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -324,17 +325,25 @@ export type OutcomeVerdict = "accepted" | "rejected" | "revised" | "ignored";
 export interface EnrichmentOutcome {
   id: string;
   user_id: string;
-  enrichment_id: string;
+  enrichment_id: string | null;
   original_message: string;
   enriched_message: string;
   strategy_used: string;
   enrichment_depth: string;
-  verdict: OutcomeVerdict;
+  verdict: OutcomeVerdict | null;
   assumptions_accepted: string[];
   assumptions_corrected: string[];
   correction_details: Record<string, unknown>;
   platform: string | null;
   session_id: string | null;
+  processing_time_ms: number | null;
+  context_layer_count: number;
+  assumption_count: number;
+  gap_count: number;
+  model_used: string | null;
+  had_mutations: boolean;
+  tool_calls: number;
+  workspace_id: string | null;
   created_at: string;
 }
 

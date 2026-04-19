@@ -44,10 +44,15 @@ export class KomatikOutcomeAdapter implements ContextAdapter {
 
     const verdictCounts = new Map<string, number>();
     let totalCorrected = 0;
+    let telemetryOnly = 0;
     const correctionPatterns = new Map<string, number>();
 
     for (const o of outcomes) {
-      verdictCounts.set(o.verdict, (verdictCounts.get(o.verdict) ?? 0) + 1);
+      if (o.verdict == null) {
+        telemetryOnly++;
+      } else {
+        verdictCounts.set(o.verdict, (verdictCounts.get(o.verdict) ?? 0) + 1);
+      }
 
       if (o.assumptions_corrected && o.assumptions_corrected.length > 0) {
         totalCorrected += o.assumptions_corrected.length;
@@ -60,13 +65,22 @@ export class KomatikOutcomeAdapter implements ContextAdapter {
     const accepted = verdictCounts.get("accepted") ?? 0;
     const rejected = verdictCounts.get("rejected") ?? 0;
     const revised = verdictCounts.get("revised") ?? 0;
+    const judged = accepted + rejected + revised;
     const total = outcomes.length;
-    const acceptanceRate = total > 0 ? ((accepted / total) * 100).toFixed(0) : "0";
+    const acceptanceRate = judged > 0 ? ((accepted / judged) * 100).toFixed(0) : "0";
 
     const parts: string[] = [];
-    parts.push(
-      `${total} recent enrichments: ${accepted} accepted, ${revised} revised, ${rejected} rejected (${acceptanceRate}% acceptance)`,
-    );
+    if (judged > 0) {
+      parts.push(
+        `${judged} judged enrichments: ${accepted} accepted, ${revised} revised, ${rejected} rejected (${acceptanceRate}% acceptance)`,
+      );
+    }
+    if (telemetryOnly > 0) {
+      parts.push(`${telemetryOnly} telemetry-only records (no verdict yet)`);
+    }
+    if (parts.length === 0) {
+      parts.push(`${total} enrichment records found`);
+    }
 
     if (totalCorrected > 0) {
       const topCorrections = [...correctionPatterns.entries()]
@@ -85,6 +99,8 @@ export class KomatikOutcomeAdapter implements ContextAdapter {
           outcomes,
           stats: {
             total,
+            judged,
+            telemetryOnly,
             accepted,
             rejected,
             revised,
