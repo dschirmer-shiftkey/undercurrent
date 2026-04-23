@@ -1,0 +1,10 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-04-19T00:16:37.912Z"}
+{"type":"summary","summary":"prior session summary"}
+{"type":"user","isMeta":false,"isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"refactor the auth middleware"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Reading the middleware file."},{"type":"tool_use","name":"Read","input":{"path":"auth.ts"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"file contents here"}]}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"<command-name>/loop</command-name><command-args>5m /deploy</command-args>"}]}}
+{"type":"user","isSidechain":true,"message":{"role":"user","content":[{"type":"text","text":"subagent internal message"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"also add rate limiting\n\n<system-reminder>\nReminder: keep it under 100 lines\n</system-reminder>"}]}}
+{"type":"user","message":{"role":"user","content":"string-shaped content also works"}}

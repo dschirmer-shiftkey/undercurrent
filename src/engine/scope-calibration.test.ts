@@ -63,6 +63,43 @@ describe("Graduated Scope Calibration", () => {
     expect(["none", "light", "standard"]).toContain(result.metadata.enrichmentDepth);
   });
 
+  it("status pastes bypass enrichment entirely", async () => {
+    const pipeline = createPipeline();
+    const result = await pipeline.enrich({
+      message: `All green.
+
+Build & Type-Check Platform: pass (4m18s)
+CI Gate: pass
+PR #864 is now CI-clean.
+
+Our fix works — the SDK loads gracefully at runtime.`,
+    });
+    expect(result.metadata.enrichmentDepth).toBe("none");
+    expect(result.enrichedMessage).toBe(result.originalMessage);
+    expect(result.gaps).toHaveLength(0);
+    expect(result.assumptions).toHaveLength(0);
+  });
+
+  describe("acknowledgments bypass enrichment entirely", () => {
+    const ackMessages = [
+      "thanks",
+      "looks great thank you!",
+      "please",
+      "ok",
+      "perfect",
+      "sounds good",
+    ];
+    for (const msg of ackMessages) {
+      it(`passthrough for "${msg}"`, async () => {
+        const result = await pipeline.enrich({ message: msg });
+        expect(result.metadata.enrichmentDepth).toBe("none");
+        expect(result.enrichedMessage).toBe(result.originalMessage);
+        expect(result.gaps).toHaveLength(0);
+        expect(result.assumptions).toHaveLength(0);
+      });
+    }
+  });
+
   it("includes targetPlatform in metadata", async () => {
     const result = await pipeline.enrich({
       message: "help me with the api",

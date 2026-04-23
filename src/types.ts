@@ -12,6 +12,8 @@ export type Action =
   | "discuss"
   | "decide"
   | "vent"
+  | "acknowledge"
+  | "report"
   | "unknown";
 
 export type Specificity = "high" | "medium" | "low";
