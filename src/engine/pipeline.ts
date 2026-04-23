@@ -301,6 +301,8 @@ export class Pipeline {
    * conversation length, and whether enrichment context hints are present.
    */
   private determineDepth(intent: IntentSignal): EnrichmentDepth {
+    if (intent.action === "acknowledge" || intent.action === "report") return "none";
+
     let score = 0;
 
     const specificityScores: Record<string, number> = {
@@ -328,6 +330,8 @@ export class Pipeline {
       explore: 0,
       discuss: 1,
       vent: 0,
+      acknowledge: 0,
+      report: 0,
       unknown: 1,
     };
     score += actionComplexity[intent.action] ?? 1;

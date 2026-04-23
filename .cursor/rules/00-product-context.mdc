@@ -157,8 +157,8 @@ Per-user, per-domain model selection. Komatik-internal first. Configured via `Un
 
 ## npm
 
-- **Published**: `@komatik/undercurrent@0.2.0` on npmjs.com (2026-04-18)
+- **Published**: `@komatik/undercurrent@0.3.0` on npmjs.com
 - **Scope**: `@komatik` org (public)
 - **CI release**: `release.yml` uses OIDC Trusted Publishing (`npm publish --provenance`). Triggered on `v*` tags.
-- **Note**: v0.2.0 tag points at `4704904` (pre-OIDC workflow). HEAD has 10+ post-tag commits (OIDC switch, cleanup, completeness audit, LlmStrategy, pipeline deficiency fixes, heuristic expansion). Next release should bump to v0.3.0 and tag at HEAD.
 - **CJS compat**: All `package.json` export paths include `require` and `default` conditions alongside `import`, enabling `eval('require')` consumers (Turbopack workarounds).
+- **Dev deps include peer deps**: `@modelcontextprotocol/sdk` and `zod` are listed in both `peerDependencies` (optional) and `devDependencies` to ensure CI always has them for typecheck.
