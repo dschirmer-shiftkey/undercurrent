@@ -586,13 +586,13 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 
 **What this is**: An invisible prompt enrichment SDK (`@komatik/undercurrent`) — 4-stage pipeline that transforms vague human messages into structured, context-rich prompts before the AI sees them.
 
-**Stack**: TypeScript 5.7+, ESM-only, Node 20+, zero runtime dependencies. Dev deps: vitest, typescript, @types/node.
+**Stack**: TypeScript 6.0+, ESM-only, Node 20+, zero runtime dependencies. Dev deps: vitest, typescript, @types/node, @modelcontextprotocol/sdk, zod.
 
 **Build & test**:
 ```bash
 npm run build       # tsc → dist/
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run — 318 tests in 28 files
+npm test            # vitest run — 341 tests in 28 files
 npm run start:mcp   # Run the MCP server (requires env vars)
 npm run playground  # Interactive REPL — live pipeline testing (tsx)
 npm run replay      # Batch transcript replay with reports (tsx)
