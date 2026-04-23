@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-04-23
+
+### Added
+- `acknowledge` and `report` action types — conversational acknowledgments ("thanks", "perfect", "sounds good") and status pastes (CI output, test reports, stack traces) bypass enrichment entirely via new `Action` variants
+- Typo-tolerant action classifier — Damerau-Levenshtein fallback catches misspelled verbs like `udpate`, `imlement`, `destoryed`, `refactr` after exact patterns miss (length-aware threshold: 1 edit for 4–6 char words, 2 for longer)
+- Selection-reference detection — messages like "option a please", "A+B", "all of the above", "items 1-5", "both" fire a critical gap when no memory context exists; file/scope gaps are suppressed (prior turn established those)
+- Context-aware gap suppression — file-location and scope-ambiguity gaps no longer fire when conversation/memory layers already establish those; vague-pronoun threshold raised when conversation context is present
+- Claude Code `.jsonl` parser in `transcript-parser.ts` — auto-detects Cursor vs Claude Code format, filters `isMeta`/`isSidechain`/tool-result envelopes, strips `<system-reminder>` and `<command-*>` tags
+- Replay-harness fixtures and tests for both transcript formats
+
+### Changed
+- `DefaultStrategy.classifyAction` routes through status-paste → acknowledgment → pattern → fuzzy-match → fallback
+- `DefaultStrategy.extractKeyFragments` captures selection tokens (option a, A+B, items 1-5, first/second/last one)
+- `Pipeline.determineDepth` short-circuits to `"none"` for `acknowledge` and `report` actions
+
+### Fixed
+- Real-transcript replay on a 30-message Komatik corpus: total gaps 59 → 16 (-73%), "no file referenced" noise 24× → 0, unknown-action classifications cut in half
+
 ## [0.3.0] - 2026-04-19
 
 ### Added

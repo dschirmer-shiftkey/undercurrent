@@ -1,6 +1,6 @@
 {
   "name": "@komatik/undercurrent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Invisible prompt enrichment engine — translates vague human intent into precise AI comprehension",
   "type": "module",
   "main": "./dist/index.js",
