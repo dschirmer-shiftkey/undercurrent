@@ -37,6 +37,143 @@ describe("DefaultStrategy", () => {
       expect(intent.action).toBe("vent");
     });
 
+    describe("classifies acknowledgments (real transcript samples)", () => {
+      const ackCases = [
+        "thanks",
+        "thank you",
+        "thanks!",
+        "looks great thank you!",
+        "please",
+        "ok",
+        "okay",
+        "perfect",
+        "nice",
+        "awesome",
+        "cool",
+        "got it",
+        "makes sense",
+        "sounds good",
+        "looks good",
+      ];
+      for (const msg of ackCases) {
+        it(`treats "${msg}" as acknowledge`, async () => {
+          const intent = await strategy.classifyIntent(msg, []);
+          expect(intent.action).toBe("acknowledge");
+        });
+      }
+    });
+
+    describe("classifies status pastes as 'report'", () => {
+      it("treats a real CI status paste as report (from Komatik transcript #29)", async () => {
+        const msg = `All green.
+
+Build & Type-Check Platform: pass (4m18s)
+CI Gate: pass
+Every other check: pass or skipped (as expected for path-scoped jobs)
+PR #864 is now CI-clean. That means:
+
+Our fix works — the SDK loads gracefully at runtime and the type annotations compile clean.
+Once #864 merges to dev, PR #863 (and any other PRs touching platform/web/**) will also pass CI.`;
+        const intent = await strategy.classifyIntent(msg, []);
+        expect(intent.action).toBe("report");
+      });
+
+      it("treats a stack-trace paste as report", async () => {
+        const msg = `TypeError: Cannot read property 'id' of undefined
+    at handleSubmit (src/auth/login.ts:42:15)
+    at processRequest (src/api/middleware.ts:88:9)
+    at async run (src/server.ts:120:5)`;
+        const intent = await strategy.classifyIntent(msg, []);
+        expect(intent.action).toBe("report");
+      });
+
+      it("treats a test-run summary as report", async () => {
+        const msg = `Test Files  29 passed (29)
+Tests      346 passed (346)
+Duration   1.05s
+
+All green. Ready to merge #847.`;
+        const intent = await strategy.classifyIntent(msg, []);
+        expect(intent.action).toBe("report");
+      });
+    });
+
+    describe("does NOT classify status-shaped input as report when a question is present", () => {
+      it("paste + trailing question is NOT a report", async () => {
+        const msg = `TypeError: Cannot read property 'id' of undefined
+    at handleSubmit (src/auth/login.ts:42:15)
+    at processRequest (src/api/middleware.ts:88:9)
+
+How do I fix this?`;
+        const intent = await strategy.classifyIntent(msg, []);
+        expect(intent.action).not.toBe("report");
+      });
+
+      it("paste + 'can you help' is NOT a report", async () => {
+        const msg = `Build failed
+Step 3: pass
+Step 4: fail (timeout after 5m0s)
+
+Can you look at why step 4 is timing out?`;
+        const intent = await strategy.classifyIntent(msg, []);
+        expect(intent.action).not.toBe("report");
+      });
+
+      it("single-line 'All green' is NOT a report (too short)", async () => {
+        const intent = await strategy.classifyIntent("All green", []);
+        expect(intent.action).not.toBe("report");
+      });
+    });
+
+    describe("typo-tolerant action classification", () => {
+      const typoCases: Array<{ msg: string; expected: Action }> = [
+        { msg: "udpate the login form", expected: "build" },
+        { msg: "imlement a new button", expected: "build" },
+        { msg: "refactr the auth module", expected: "build" },
+        { msg: "confgure the deploy step", expected: "build" },
+        { msg: "migreate the users table", expected: "build" },
+        { msg: "the header is destoryed", expected: "fix" },
+        { msg: "explian how the pipeline works", expected: "explore" },
+        { msg: "describ the flow for me", expected: "explore" },
+        { msg: "we need to chose between two paths", expected: "decide" },
+      ];
+      for (const { msg, expected } of typoCases) {
+        it(`classifies "${msg}" as ${expected}`, async () => {
+          const intent = await strategy.classifyIntent(msg, []);
+          expect(intent.action).toBe(expected);
+        });
+      }
+    });
+
+    describe("fuzzy matcher does NOT overreach", () => {
+      it("does not falsely match short English words to action verbs", async () => {
+        const intent = await strategy.classifyIntent("this is the thing", []);
+        expect(intent.action).not.toBe("build");
+        expect(intent.action).not.toBe("fix");
+      });
+
+      it("exact action match still routes via pattern, not fuzzy", async () => {
+        const intent = await strategy.classifyIntent("update the config", []);
+        expect(intent.action).toBe("build");
+      });
+    });
+
+    describe("does NOT classify as acknowledge when real intent is present", () => {
+      const nonAckCases: Array<[string, string]> = [
+        ["please fix the login bug", "fix"],
+        ["thanks, now build the dashboard", "build"],
+        ["ok can you look at the router?", "explore"],
+        ["nice, now refactor the auth middleware", "build"],
+        ["perfect — now can we merge the PR?", "build"],
+      ];
+      for (const [msg, expected] of nonAckCases) {
+        it(`treats "${msg}" as ${expected}, not acknowledge`, async () => {
+          const intent = await strategy.classifyIntent(msg, []);
+          expect(intent.action).toBe(expected);
+        });
+      }
+    });
+
     it("detects high specificity with file references", async () => {
       const intent = await strategy.classifyIntent(
         "fix the `handleSubmit` function in src/auth/login.ts on line 42 — it crashes on empty input",
@@ -339,6 +476,169 @@ describe("DefaultStrategy", () => {
 
       const fileGap = gaps.find((g) => g.description.includes("file"));
       expect(fileGap).toBeDefined();
+    });
+
+    describe("selection-reference detection", () => {
+      const selectionCases = [
+        "option a please",
+        "A+B",
+        "bundle A+B in one migration",
+        "all of the above",
+        "both",
+        "items 1-5",
+        "okay option b, let's proceed",
+        "let's go with option 2",
+        "the first one",
+      ];
+      for (const msg of selectionCases) {
+        it(`fires selection gap when no memory context: "${msg}"`, async () => {
+          const intent = await strategy.classifyIntent(msg, []);
+          const gaps = await strategy.analyzeGaps(intent, [], msg);
+          const selectionGap = gaps.find((g) => g.description.includes("Selection references"));
+          expect(selectionGap).toBeDefined();
+          expect(selectionGap!.critical).toBe(true);
+        });
+      }
+
+      it("suppresses selection gap when memory context is present", async () => {
+        const memoryLayer: ContextLayer = {
+          source: "komatik-memory",
+          priority: 0,
+          timestamp: Date.now(),
+          data: {},
+          summary: "Prior turn offered options A, B, C for migration strategy",
+        };
+        const intent = await strategy.classifyIntent("A+B", []);
+        const gaps = await strategy.analyzeGaps(intent, [memoryLayer], "A+B");
+        const selectionGap = gaps.find((g) => g.description.includes("Selection references"));
+        expect(selectionGap).toBeUndefined();
+      });
+
+      it("suppresses file and scope gaps when selection is detected", async () => {
+        const intent = await strategy.classifyIntent("option a please", []);
+        const gaps = await strategy.analyzeGaps(intent, [], "option a please");
+        const fileGap = gaps.find((g) => g.description.includes("file"));
+        const scopeGap = gaps.find((g) => g.description.includes("Scope"));
+        expect(fileGap).toBeUndefined();
+        expect(scopeGap).toBeUndefined();
+      });
+
+      it("does NOT treat mid-message 'first' or 'both' as selection", async () => {
+        const intent = await strategy.classifyIntent(
+          "this is the first time we try both sides together",
+          [],
+        );
+        const gaps = await strategy.analyzeGaps(
+          intent,
+          [],
+          "this is the first time we try both sides together",
+        );
+        const selectionGap = gaps.find((g) => g.description.includes("Selection references"));
+        expect(selectionGap).toBeUndefined();
+      });
+
+      it("captures selection tokens in rawFragments", async () => {
+        const intent = await strategy.classifyIntent("bundle A+B in one migration", []);
+        expect(intent.rawFragments.some((f) => f.includes("a+b"))).toBe(true);
+      });
+    });
+
+    describe("context-aware gap suppression", () => {
+      it("suppresses file gap when conversation layer names files", async () => {
+        const conversationLayer: ContextLayer = {
+          source: "conversation",
+          priority: 0,
+          timestamp: Date.now(),
+          data: {
+            terminology: { "src/auth/middleware.ts": 3 },
+          },
+          summary: "Recent discussion touched src/auth/middleware.ts",
+        };
+        const intent = await strategy.classifyIntent("fix the broken login", []);
+        const gaps = await strategy.analyzeGaps(
+          intent,
+          [conversationLayer],
+          "fix the broken login",
+        );
+        const fileGap = gaps.find((g) => g.description.includes("file"));
+        expect(fileGap).toBeUndefined();
+      });
+
+      it("suppresses scope gap for unknown scope when conversation has decisions", async () => {
+        const conversationLayer: ContextLayer = {
+          source: "conversation",
+          priority: 0,
+          timestamp: Date.now(),
+          data: {
+            decisions: ["let's go with JWT for auth"],
+          },
+          summary: "Active decisions recorded",
+        };
+        const intent = {
+          action: "build" as const,
+          specificity: "low" as const,
+          scope: "unknown" as const,
+          emotionalLoad: "neutral" as const,
+          confidence: 0.5,
+          rawFragments: [],
+          domainHints: [],
+        };
+        const gaps = await strategy.analyzeGaps(
+          intent,
+          [conversationLayer],
+          "build the next part",
+        );
+        const scopeGap = gaps.find((g) => g.description.includes("Scope"));
+        expect(scopeGap).toBeUndefined();
+      });
+
+      it("still fires scope gap for cross-system even with conversation context", async () => {
+        const conversationLayer: ContextLayer = {
+          source: "conversation",
+          priority: 0,
+          timestamp: Date.now(),
+          data: {
+            topics: "Topic trajectory: auth → database",
+          },
+          summary: "Discussion progressed",
+        };
+        const intent = {
+          action: "build" as const,
+          specificity: "low" as const,
+          scope: "cross-system" as const,
+          emotionalLoad: "neutral" as const,
+          confidence: 0.5,
+          rawFragments: [],
+          domainHints: [],
+        };
+        const gaps = await strategy.analyzeGaps(
+          intent,
+          [conversationLayer],
+          "refactor the entire system",
+        );
+        const scopeGap = gaps.find((g) => g.description.includes("Scope"));
+        expect(scopeGap).toBeDefined();
+      });
+
+      it("raises vague-reference threshold when conversation context exists", async () => {
+        const conversationLayer: ContextLayer = {
+          source: "conversation",
+          priority: 0,
+          timestamp: Date.now(),
+          data: {
+            topics: "Topic trajectory: testing",
+          },
+          summary: "Prior discussion about tests",
+        };
+        const intent = await strategy.classifyIntent("update it to match that", []);
+        const gaps = await strategy.analyzeGaps(
+          intent,
+          [conversationLayer],
+          "update it to match that",
+        );
+        const vagueGap = gaps.find((g) => g.description.toLowerCase().includes("ambiguous"));
+        expect(vagueGap).toBeUndefined();
+      });
     });
   });
 
