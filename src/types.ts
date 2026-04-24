@@ -1,4 +1,4 @@
-import type { KomatikDataClient } from "./komatik/client.js";
+import type { KomatikDataClient, KomatikWriteClient } from "./komatik/client.js";
 
 // ─── Intent Signal ──────────────────────────────────────────────────────────
 // The structured representation of what the human is trying to do.
@@ -153,6 +153,7 @@ export interface UndercurrentConfig {
   debug?: boolean;
   sessionMonitor?: SessionMonitorConfig;
   modelRouter?: ModelRouterConfig;
+  suggestions?: SuggestionsConfig;
 }
 
 // ─── Adapter Interface ──────────────────────────────────────────────────────
@@ -202,6 +203,11 @@ export interface EnrichmentStrategy {
     assumptions: Assumption[],
     resolvedGaps: Gap[],
   ): Promise<string>;
+
+  suggestFollowups?(
+    input: SuggestionInput,
+    signals: ResponseSignals,
+  ): Promise<FollowupSuggestion[]>;
 }
 
 // ─── Pipeline Stage Hooks ───────────────────────────────────────────────────
@@ -382,4 +388,66 @@ export interface ProcessResult {
   enrichedPrompt: EnrichedPrompt;
   modelRecommendation: ModelRecommendation;
   modelResponse: ModelCallerOutput;
+}
+
+// ─── Follow-up Suggestions ──────────────────────────────────────────────────
+// Post-response reflection stage. After the agent produces a response,
+// Undercurrent analyzes it against session context and emits auto-complete
+// prompts that render under the user's text input. Categorized as
+// continue / amend / stop. Experimental, opt-in via UndercurrentConfig.suggestions.
+
+export type FollowupCategory = "continue" | "amend" | "stop";
+
+export interface FollowupSuggestion {
+  id: string;
+  category: FollowupCategory;
+  prompt: string;
+  label: string;
+  rationale: string;
+  confidence: number;
+}
+
+export interface SuggestionInput {
+  originalMessage: string;
+  enrichedPrompt?: EnrichedPrompt;
+  agentResponse: string;
+  conversation: ConversationTurn[];
+  enrichmentContext?: Record<string, unknown>;
+  targetPlatform?: TargetPlatform;
+}
+
+export interface ResponseSignals {
+  containsOpenQuestion: boolean;
+  containsError: boolean;
+  containsCompletion: boolean;
+  topicShift: boolean;
+  referencedTerms: string[];
+}
+
+export interface SuggestionResultMetadata {
+  processingTimeMs: number;
+  strategyUsed: string;
+  generatedAt: number;
+  responseSignals: ResponseSignals;
+}
+
+export interface SuggestionResult {
+  suggestions: FollowupSuggestion[];
+  metadata: SuggestionResultMetadata;
+}
+
+export interface SuggestionFeedback {
+  suggestionId: string;
+  outcome: "accepted" | "dismissed" | "edited";
+  editedPromptText?: string;
+  sessionId?: string;
+  platform?: TargetPlatform;
+}
+
+export interface SuggestionsConfig {
+  enabled: boolean;
+  maxSuggestions?: number;
+  llmCall?: (prompt: string) => Promise<string>;
+  writer?: KomatikWriteClient;
+  userId?: string;
 }
