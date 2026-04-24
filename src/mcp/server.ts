@@ -9,12 +9,13 @@ import { KomatikMarketplaceAdapter } from "../komatik/marketplace-adapter.js";
 import { KomatikPreferenceAdapter } from "../komatik/preference-adapter.js";
 import { KomatikOutcomeAdapter } from "../komatik/outcome-adapter.js";
 import { KomatikMemoryAdapter } from "../komatik/memory-adapter.js";
-import type { KomatikDataClient } from "../komatik/client.js";
+import type { KomatikDataClient, KomatikWriteClient } from "../komatik/client.js";
 import type { ContextLayer, ConversationTurn, TargetPlatform } from "../types.js";
 
 export interface McpServerConfig {
   client: KomatikDataClient;
   userId: string;
+  writeClient?: KomatikWriteClient;
 }
 
 /**
@@ -22,7 +23,7 @@ export interface McpServerConfig {
  * and Komatik user context to external tools via the MCP protocol.
  */
 export function createUndercurrentMcpServer(config: McpServerConfig): McpServer {
-  const { client, userId } = config;
+  const { client, userId, writeClient } = config;
 
   const adapterOptions = { client, userId };
 
@@ -46,6 +47,11 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
     ],
     strategy: new DefaultStrategy(),
     targetPlatform: "mcp",
+    suggestions: {
+      enabled: true,
+      writer: writeClient,
+      userId,
+    },
   });
 
   const server = new McpServer(
@@ -218,6 +224,89 @@ function registerTools(server: McpServer, undercurrent: Undercurrent): void {
             ),
           },
         ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "suggest_followups",
+    {
+      title: "Suggest Follow-up Prompts",
+      description:
+        "Experimental post-response reflection. Given the user's original message and " +
+        "the agent's response, returns 3-5 auto-complete prompt suggestions (categorized " +
+        "as continue / amend / stop) to render under the user's text input.",
+      inputSchema: {
+        originalMessage: z.string().describe("The user's most recent message"),
+        agentResponse: z.string().describe("The agent's response to analyze"),
+        conversation: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant", "system"]),
+              content: z.string(),
+            }),
+          )
+          .optional()
+          .describe("Prior conversation turns for topic-shift detection"),
+        platform: z
+          .enum(["cursor", "claude", "chatgpt", "api", "mcp", "generic"])
+          .optional()
+          .describe("Target platform hint"),
+      },
+    },
+    async (args) => {
+      const conversation: ConversationTurn[] = (args.conversation ?? []).map((t) => ({
+        role: t.role,
+        content: t.content,
+      }));
+
+      const result = await undercurrent.suggestFollowups({
+        originalMessage: args.originalMessage,
+        agentResponse: args.agentResponse,
+        conversation,
+        targetPlatform: (args.platform as TargetPlatform | undefined) ?? "mcp",
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "record_suggestion_feedback",
+    {
+      title: "Record Suggestion Feedback",
+      description:
+        "Log whether a follow-up suggestion was accepted, dismissed, or edited. " +
+        "Feeds the enrichment_outcomes table so future scoring improves. No-op if " +
+        "the MCP server was not configured with a write client.",
+      inputSchema: {
+        suggestionId: z.string().describe("The id returned by suggest_followups"),
+        outcome: z.enum(["accepted", "dismissed", "edited"]),
+        editedPromptText: z
+          .string()
+          .optional()
+          .describe("If the user edited the suggestion before sending, the final text"),
+        sessionId: z.string().optional(),
+        platform: z.enum(["cursor", "claude", "chatgpt", "api", "mcp", "generic"]).optional(),
+      },
+    },
+    async (args) => {
+      await undercurrent.recordSuggestionFeedback({
+        suggestionId: args.suggestionId,
+        outcome: args.outcome,
+        editedPromptText: args.editedPromptText,
+        sessionId: args.sessionId,
+        platform: args.platform as TargetPlatform | undefined,
+      });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }],
       };
     },
   );
