@@ -182,6 +182,106 @@ describe("ConversationAdapter", () => {
     });
   });
 
+  describe("repeated read detection", () => {
+    it("flags file paths re-fetched across multiple assistant turns", async () => {
+      const adapter = new ConversationAdapter();
+      const layers = await adapter.gather(
+        makeInput([
+          { role: "user", content: "look at the auth code" },
+          { role: "assistant", content: "I read src/auth/login.ts and found the handler." },
+          { role: "user", content: "what about the tests" },
+          { role: "assistant", content: "Re-checking src/auth/login.ts to confirm the export." },
+        ]),
+      );
+
+      const repeatLayer = layers.find((l) => l.summary.includes("Repeated context fetches"));
+      expect(repeatLayer).toBeDefined();
+      const data = repeatLayer!.data as {
+        repeatedReads: Array<{ target: string; count: number; kind: string }>;
+      };
+      expect(data.repeatedReads[0]!.target).toContain("src/auth/login.ts");
+      expect(data.repeatedReads[0]!.count).toBeGreaterThanOrEqual(2);
+      expect(data.repeatedReads[0]!.kind).toBe("file");
+    });
+
+    it("flags repeated grep queries", async () => {
+      const adapter = new ConversationAdapter();
+      const layers = await adapter.gather(
+        makeInput([
+          { role: "assistant", content: 'I will grep for "TokenRefresh" across the repo.' },
+          { role: "user", content: "anything?" },
+          { role: "assistant", content: 'No matches. Let me search "TokenRefresh" again.' },
+        ]),
+      );
+
+      const repeatLayer = layers.find((l) => l.summary.includes("Repeated context fetches"));
+      expect(repeatLayer).toBeDefined();
+      const reads = (
+        repeatLayer!.data as { repeatedReads: Array<{ kind: string; target: string }> }
+      ).repeatedReads;
+      expect(reads.some((r) => r.kind === "grep")).toBe(true);
+    });
+
+    it("does not flag a single read", async () => {
+      const adapter = new ConversationAdapter();
+      const layers = await adapter.gather(
+        makeInput([
+          { role: "assistant", content: "I read src/auth/login.ts once." },
+        ]),
+      );
+
+      const repeatLayer = layers.find((l) => l.summary.includes("Repeated context fetches"));
+      expect(repeatLayer).toBeUndefined();
+    });
+  });
+
+  describe("abandonment detection", () => {
+    it("detects 'scratch that' pivots and lists superseded turns", async () => {
+      const adapter = new ConversationAdapter();
+      const layers = await adapter.gather(
+        makeInput([
+          { role: "user", content: "Build the auth in Express" },
+          { role: "assistant", content: "Setting up Express routes" },
+          { role: "user", content: "Scratch that, let's use Fastify instead" },
+        ]),
+      );
+
+      const layer = layers.find((l) => l.summary.includes("Pivot detected"));
+      expect(layer).toBeDefined();
+      const data = layer!.data as {
+        abandoned: Array<{ signal: string; turnIndex: number; supersededTurns: number[] }>;
+      };
+      expect(data.abandoned[0]!.turnIndex).toBe(2);
+      expect(data.abandoned[0]!.supersededTurns).toContain(1);
+      expect(data.abandoned[0]!.supersededTurns).toContain(0);
+    });
+
+    it("detects 'different approach' phrasings", async () => {
+      const adapter = new ConversationAdapter();
+      const layers = await adapter.gather(
+        makeInput([
+          { role: "user", content: "Use Redux for state" },
+          { role: "user", content: "Actually, let's try a different approach with Zustand" },
+        ]),
+      );
+
+      expect(layers.find((l) => l.summary.includes("Pivot detected"))).toBeDefined();
+    });
+
+    it("does not flag normal conversation as abandonment", async () => {
+      const adapter = new ConversationAdapter();
+      const layers = await adapter.gather(
+        makeInput([
+          { role: "user", content: "Build the auth in Express" },
+          { role: "assistant", content: "Setting up Express routes" },
+          { role: "user", content: "Great, also add JWT" },
+        ]),
+      );
+
+      expect(layers.find((l) => l.summary.includes("Pivot detected"))).toBeUndefined();
+    });
+  });
+
   it("produces multiple layer types from a rich conversation", async () => {
     const adapter = new ConversationAdapter();
     const layers = await adapter.gather(

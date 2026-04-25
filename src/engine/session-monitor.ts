@@ -43,6 +43,10 @@ interface HealthThresholds {
   warmTopicShifts: number;
   degradingTopicShifts: number;
   degradingDurationMs: number;
+  /** Topic-shift count that triggers degrading when paired with driftAgeMs. */
+  driftAgeTopicShifts: number;
+  /** Elapsed time that triggers degrading when paired with driftAgeTopicShifts. */
+  driftAgeMs: number;
 }
 
 const DEFAULT_THRESHOLDS: HealthThresholds = {
@@ -52,6 +56,8 @@ const DEFAULT_THRESHOLDS: HealthThresholds = {
   warmTopicShifts: 3,
   degradingTopicShifts: 6,
   degradingDurationMs: 60 * 60 * 1000,
+  driftAgeTopicShifts: 3,
+  driftAgeMs: 30 * 60 * 1000,
 };
 
 export class SessionMonitor {
@@ -165,7 +171,8 @@ export class SessionMonitor {
     if (
       ratio >= this.thresholds.degradingRatio ||
       shifts >= this.thresholds.degradingTopicShifts ||
-      elapsed >= this.thresholds.degradingDurationMs
+      elapsed >= this.thresholds.degradingDurationMs ||
+      (shifts >= this.thresholds.driftAgeTopicShifts && elapsed >= this.thresholds.driftAgeMs)
     ) {
       return "degrading";
     }

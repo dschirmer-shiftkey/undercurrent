@@ -369,4 +369,56 @@ describe("Pipeline", () => {
       expect(result.metadata.tokens!.overhead).toBe(0);
     });
   });
+
+  describe("budget meter", () => {
+    it("omits budget when sessionMonitor is not configured", async () => {
+      const pipeline = new Pipeline(makeConfig());
+      const result = await pipeline.enrich({ message: "help me think this through" });
+      expect(result.metadata.budget).toBeUndefined();
+    });
+
+    it("reports a low-pressure budget for a short fresh session", async () => {
+      const pipeline = new Pipeline(
+        makeConfig({ sessionMonitor: { tokenBudget: 100_000 } }),
+      );
+      const result = await pipeline.enrich({ message: "help me think this through" });
+
+      const budget = result.metadata.budget!;
+      expect(budget).toBeDefined();
+      expect(budget.budget).toBe(100_000);
+      expect(budget.pressure).toBe("low");
+      expect(budget.utilization).toBeLessThan(0.4);
+      expect(budget.available).toBeGreaterThan(0);
+      expect(budget.trend).toBe("stable");
+    });
+
+    it("escalates pressure as utilization climbs", async () => {
+      // Tiny budget — even one enrichment will push utilization high.
+      const pipeline = new Pipeline(
+        makeConfig({ sessionMonitor: { tokenBudget: 80 } }),
+      );
+      const result = await pipeline.enrich({
+        message:
+          "design a deeply uncertain, sprawling cross-system overhaul of the entire platform stack",
+      });
+
+      const budget = result.metadata.budget!;
+      expect(["moderate", "high", "critical"]).toContain(budget.pressure);
+      expect(budget.utilization).toBeGreaterThan(0);
+    });
+
+    it("reports a budget on passthrough results too", async () => {
+      const pipeline = new Pipeline(
+        makeConfig({ sessionMonitor: { tokenBudget: 100_000 } }),
+      );
+      const result = await pipeline.enrich({
+        message:
+          "fix the `calculateTotal` function on line 15 of utils.ts — it returns NaN",
+      });
+
+      expect(result.metadata.enrichmentDepth).toBe("none");
+      expect(result.metadata.budget).toBeDefined();
+      expect(result.metadata.budget!.pressure).toBe("low");
+    });
+  });
 });

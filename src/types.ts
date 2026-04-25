@@ -133,6 +133,30 @@ export interface EnrichmentMetadata {
   targetPlatform: TargetPlatform;
   modelRecommendation?: ModelRecommendation;
   tokens?: TokenAccounting;
+  /** Wave-meter-style readout of session token pressure. Present only when sessionMonitor is configured. */
+  budget?: BudgetMeter;
+}
+
+/**
+ * Session-level token budget readout. Mirrors the wave-icon UX of intent
+ * effort: pressure rises as utilization climbs, trend signals whether the
+ * last few enrichments are growing or stabilising.
+ */
+export interface BudgetMeter {
+  /** Total tokens consumed by the session so far (per SessionMonitor). */
+  used: number;
+  /** Configured token budget for the session. */
+  budget: number;
+  /** budget - used. Clamped at 0. */
+  available: number;
+  /** used / budget, clamped to [0, 1]. */
+  utilization: number;
+  /** Wave-style bucket of session pressure. */
+  pressure: "low" | "moderate" | "high" | "critical";
+  /** Per-adapter context contribution from this enrichment (mirrors tokens.contextByAdapter). */
+  perAdapter: Record<string, number>;
+  /** Direction of the last few enrichments' total tokens. */
+  trend: "stable" | "growing" | "shrinking";
 }
 
 /**

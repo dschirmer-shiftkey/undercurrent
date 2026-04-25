@@ -1,6 +1,7 @@
 import type {
   AdapterResult,
   Assumption,
+  BudgetMeter,
   ContextAdapter,
   ContextLayer,
   ConversationTurn,
@@ -53,6 +54,7 @@ export class Pipeline {
   private readonly modelRouterConfig: ModelRouterConfig | null;
   private readonly modelUsageAdapter: KomatikModelUsageAdapter | null;
   private lastContext: ContextLayer[] = [];
+  private readonly recentEnrichmentTokens: number[] = [];
 
   constructor(config: UndercurrentConfig) {
     this.adapters = [...config.adapters].sort((a, b) => a.priority - b.priority);
@@ -186,6 +188,8 @@ export class Pipeline {
       "compose",
     );
 
+    const tokens = this.computeTokens(input.message, enrichedMessage, context);
+    this.recordEnrichmentTokens(tokens.enrichedMessage + tokens.context);
     const result: EnrichedPrompt = {
       originalMessage: input.message,
       intent,
@@ -202,7 +206,8 @@ export class Pipeline {
         adapterResults,
         strategyUsed: this.strategy.name,
         targetPlatform: platform,
-        tokens: this.computeTokens(input.message, enrichedMessage, context),
+        tokens,
+        budget: this.computeBudget(tokens),
       },
     };
 
@@ -361,6 +366,8 @@ export class Pipeline {
     startTime: number,
     platform: TargetPlatform,
   ): EnrichedPrompt {
+    const tokens = this.computeTokens(message, message, []);
+    this.recordEnrichmentTokens(tokens.enrichedMessage);
     return {
       originalMessage: message,
       intent,
@@ -376,8 +383,52 @@ export class Pipeline {
         adapterTimings: {},
         strategyUsed: this.strategy.name,
         targetPlatform: platform,
-        tokens: this.computeTokens(message, message, []),
+        tokens,
+        budget: this.computeBudget(tokens),
       },
+    };
+  }
+
+  private recordEnrichmentTokens(total: number): void {
+    this.recentEnrichmentTokens.push(total);
+    if (this.recentEnrichmentTokens.length > 5) {
+      this.recentEnrichmentTokens.shift();
+    }
+  }
+
+  private computeBudget(tokens: TokenAccounting): BudgetMeter | undefined {
+    if (!this.monitor) return undefined;
+
+    const budget = this.monitor.tokenBudget;
+    const used = this.monitor.getState().estimatedTokens + tokens.enrichedMessage;
+    const utilization = budget > 0 ? Math.min(1, used / budget) : 0;
+
+    let pressure: BudgetMeter["pressure"];
+    if (utilization >= 0.85) pressure = "critical";
+    else if (utilization >= 0.65) pressure = "high";
+    else if (utilization >= 0.4) pressure = "moderate";
+    else pressure = "low";
+
+    let trend: BudgetMeter["trend"] = "stable";
+    if (this.recentEnrichmentTokens.length >= 3) {
+      const window = this.recentEnrichmentTokens.slice(-3);
+      const first = window[0]!;
+      const last = window[window.length - 1]!;
+      if (first > 0) {
+        const delta = (last - first) / first;
+        if (delta > 0.2) trend = "growing";
+        else if (delta < -0.2) trend = "shrinking";
+      }
+    }
+
+    return {
+      used,
+      budget,
+      available: Math.max(0, budget - used),
+      utilization,
+      pressure,
+      perAdapter: tokens.contextByAdapter,
+      trend,
     };
   }
 

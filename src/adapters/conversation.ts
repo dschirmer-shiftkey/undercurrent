@@ -58,6 +58,30 @@ export class ConversationAdapter implements ContextAdapter {
       });
     }
 
+    const repeatedReads = this.detectRepeatedReads(recent);
+    if (repeatedReads.length > 0) {
+      layers.push({
+        source: this.name,
+        priority: this.priority,
+        timestamp: Date.now(),
+        data: { repeatedReads },
+        summary: `Repeated context fetches: ${repeatedReads.map((r) => `${r.target} (${r.count}x)`).join(", ")}`,
+      });
+    }
+
+    const abandonment = this.detectAbandonment(recent);
+    if (abandonment.length > 0) {
+      layers.push({
+        source: this.name,
+        priority: this.priority,
+        timestamp: Date.now(),
+        data: { abandoned: abandonment },
+        summary: `Pivot detected — ${abandonment.length} prior approach(es) abandoned: ${abandonment
+          .map((a) => a.signal)
+          .join("; ")}`,
+      });
+    }
+
     return layers;
   }
 
@@ -135,6 +159,97 @@ export class ConversationAdapter implements ContextAdapter {
     }
 
     return repeated;
+  }
+
+  /**
+   * Flags context targets (file paths, grep queries) that show up in
+   * assistant turns 2+ times across the recent window. These are signals
+   * that the agent may be re-fetching information already in context — a
+   * direct contributor to the "tool result bloat" token waste category.
+   */
+  private detectRepeatedReads(
+    turns: AdapterInput["conversation"],
+  ): Array<{ target: string; count: number; kind: "file" | "grep" }> {
+    const filePathPattern = /(?:`|"|')?((?:[a-zA-Z]:[\\/]|\.{1,2}[\\/]|[\w-]+\/)[\w./\\-]+\.[a-zA-Z]{1,6})(?:`|"|')?/g;
+    const grepPattern = /(?:grep|search(?:ed)?|rg|ripgrep)\s+(?:for\s+)?["'`]([^"'`]{3,80})["'`]/gi;
+
+    const counts = new Map<string, { count: number; kind: "file" | "grep" }>();
+
+    for (const turn of turns) {
+      if (turn.role !== "assistant") continue;
+
+      let match: RegExpExecArray | null;
+      filePathPattern.lastIndex = 0;
+      const seenInTurn = new Set<string>();
+      while ((match = filePathPattern.exec(turn.content)) !== null) {
+        const path = match[1]!;
+        if (seenInTurn.has(path)) continue;
+        seenInTurn.add(path);
+        const prev = counts.get(path);
+        counts.set(path, { count: (prev?.count ?? 0) + 1, kind: "file" });
+      }
+
+      grepPattern.lastIndex = 0;
+      const seenGrep = new Set<string>();
+      while ((match = grepPattern.exec(turn.content)) !== null) {
+        const query = match[1]!.toLowerCase();
+        if (seenGrep.has(query)) continue;
+        seenGrep.add(query);
+        const prev = counts.get(`grep:${query}`);
+        counts.set(`grep:${query}`, { count: (prev?.count ?? 0) + 1, kind: "grep" });
+      }
+    }
+
+    return [...counts.entries()]
+      .filter(([, v]) => v.count >= 2)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10)
+      .map(([target, v]) => ({
+        target: target.startsWith("grep:") ? target.slice(5) : target,
+        count: v.count,
+        kind: v.kind,
+      }));
+  }
+
+  /**
+   * Detects when the user pivots away from a current approach. Marks
+   * preceding tool work as superseded so downstream stages (compaction,
+   * memory writes) can prefer to discard rather than preserve it.
+   */
+  private detectAbandonment(
+    turns: AdapterInput["conversation"],
+  ): Array<{ signal: string; turnIndex: number; supersededTurns: number[] }> {
+    const pivotPatterns = [
+      /scratch\s+that/i,
+      /forget\s+(?:that|it|what\s+i\s+said)/i,
+      /never\s*mind/i,
+      /let'?s?\s+(?:try|do|go\s+with)\s+(?:a\s+)?(?:different|another|new)/i,
+      /(?:^|\b)instead\s*,?\s+(?:let'?s?|i\s+want|we\s+should|do)/i,
+      /actually,?\s+(?:let'?s?|i\s+want|we\s+should|forget|no)/i,
+      /(?:back\s+up|backup|undo|revert|roll\s+back)/i,
+      /(?:wrong|that'?s?\s+not\s+(?:right|what|it)|not\s+what\s+i\s+(?:meant|wanted))/i,
+      /different\s+approach/i,
+      /change\s+of\s+plan/i,
+    ];
+
+    const found: Array<{ signal: string; turnIndex: number; supersededTurns: number[] }> = [];
+
+    turns.forEach((turn, idx) => {
+      if (turn.role !== "user") return;
+      for (const pattern of pivotPatterns) {
+        const match = turn.content.match(pattern);
+        if (!match) continue;
+        const supersededTurns: number[] = [];
+        for (let back = idx - 1; back >= Math.max(0, idx - 4); back--) {
+          supersededTurns.push(back);
+        }
+        const signal = this.extractSentenceAround(turn.content, match.index ?? 0).slice(0, 120);
+        found.push({ signal, turnIndex: idx, supersededTurns });
+        break;
+      }
+    });
+
+    return found.slice(-5);
   }
 
   private extractSentenceAround(text: string, position: number): string {
