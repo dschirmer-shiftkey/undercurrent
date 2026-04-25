@@ -1,6 +1,8 @@
 import type { SessionMemoryInput, SessionSnapshot, SessionWriter } from "../types.js";
 import type { KomatikWriteClient } from "./client.js";
 
+type MemoryType = SessionMemoryInput["memoryType"];
+
 /**
  * Writes session lifecycle state to Supabase via the Komatik data layer.
  * Implements SessionWriter against the session_memories table (for memories)
@@ -12,15 +14,20 @@ import type { KomatikWriteClient } from "./client.js";
  */
 export class KomatikSessionWriter implements SessionWriter {
   private readonly client: KomatikWriteClient;
+  private readonly dedupLookback: number;
 
-  constructor(client: KomatikWriteClient) {
+  constructor(client: KomatikWriteClient, options: { dedupLookback?: number } = {}) {
     this.client = client;
+    this.dedupLookback = options.dedupLookback ?? 100;
   }
 
   async writeMemories(userId: string, memories: SessionMemoryInput[]): Promise<void> {
     if (memories.length === 0) return;
 
-    const rows = memories.map((m) => ({
+    const deduped = await this.dedupe(userId, memories);
+    if (deduped.length === 0) return;
+
+    const rows = deduped.map((m) => ({
       user_id: userId,
       memory_type: m.memoryType,
       content: m.content,
@@ -33,6 +40,56 @@ export class KomatikSessionWriter implements SessionWriter {
 
     if (error) {
       throw new Error(`KomatikSessionWriter.writeMemories failed: ${error.message}`);
+    }
+  }
+
+  private async dedupe(
+    userId: string,
+    memories: SessionMemoryInput[],
+  ): Promise<SessionMemoryInput[]> {
+    const seen = new Set<string>();
+    const withinBatch: SessionMemoryInput[] = [];
+    for (const m of memories) {
+      const key = `${m.memoryType}::${normalize(m.content)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      withinBatch.push(m);
+    }
+
+    const types = new Set<MemoryType>(withinBatch.map((m) => m.memoryType));
+    for (const type of types) {
+      const existing = await this.fetchExistingNormalized(userId, type);
+      if (!existing) continue;
+      for (let i = withinBatch.length - 1; i >= 0; i--) {
+        const m = withinBatch[i]!;
+        if (m.memoryType !== type) continue;
+        if (existing.has(normalize(m.content))) {
+          withinBatch.splice(i, 1);
+        }
+      }
+    }
+
+    return withinBatch;
+  }
+
+  private async fetchExistingNormalized(
+    userId: string,
+    memoryType: MemoryType,
+  ): Promise<Set<string> | null> {
+    try {
+      const { data, error } = await this.client
+        .from("session_memories")
+        .select("content")
+        .eq("user_id", userId)
+        .eq("memory_type", memoryType)
+        .order("created_at", { ascending: false })
+        .limit(this.dedupLookback);
+
+      if (error || !data) return null;
+      const rows = data as unknown as Array<{ content: string }>;
+      return new Set(rows.map((r) => normalize(r.content)));
+    } catch {
+      return null;
     }
   }
 
@@ -97,4 +154,8 @@ export class KomatikSessionWriter implements SessionWriter {
 
     return null;
   }
+}
+
+function normalize(content: string): string {
+  return content.toLowerCase().replace(/\s+/g, " ").trim();
 }

@@ -167,4 +167,36 @@ describe("FilesystemAdapter", () => {
       expect(layer.source).toBe("filesystem");
     }
   });
+
+  it("respects maxContentTokens budget and annotates layers", async () => {
+    // Use a message that matches README.md, which is reachable from the root
+    // in this mock fs (subdirectories aren't traversed reliably cross-platform).
+    const readmeIntent: IntentSignal = { ...stubIntent, domainHints: ["readme"] };
+    const readmeInput: AdapterInput = {
+      ...stubInput,
+      message: "explain the readme",
+      intent: readmeIntent,
+    };
+
+    const adapter = new FilesystemAdapter({ root: "/fake/project", maxContentTokens: 2 });
+    const layers = await adapter.gather(readmeInput);
+
+    const contentLayers = layers.filter((l) => {
+      const d = l.data as { content?: string };
+      return typeof d.content === "string";
+    });
+
+    const totalTokens = contentLayers.reduce((sum, l) => {
+      const d = l.data as { estimatedTokens?: number };
+      return sum + (d.estimatedTokens ?? 0);
+    }, 0);
+
+    expect(totalTokens).toBeLessThanOrEqual(2);
+
+    for (const layer of contentLayers) {
+      const d = layer.data as { estimatedTokens: number; truncated: boolean };
+      expect(typeof d.estimatedTokens).toBe("number");
+      expect(typeof d.truncated).toBe("boolean");
+    }
+  });
 });

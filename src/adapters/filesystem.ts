@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, extname } from "node:path";
 import type { AdapterInput, ContextAdapter, ContextLayer } from "../types.js";
+import { estimateTokens } from "../engine/session-monitor.js";
 
 interface FilesystemAdapterOptions {
   root: string;
@@ -8,6 +9,10 @@ interface FilesystemAdapterOptions {
   exclude?: string[];
   maxFiles?: number;
   maxFileSize?: number;
+  /** Total token cap across all file-content layers in a single gather() call. Default 5000. */
+  maxContentTokens?: number;
+  /** Model identifier — passed through to estimateTokens for accurate per-model budgeting. */
+  model?: string;
 }
 
 interface FileEntry {
@@ -31,6 +36,8 @@ export class FilesystemAdapter implements ContextAdapter {
   private readonly exclude: string[];
   private readonly maxFiles: number;
   private readonly maxFileSize: number;
+  private readonly maxContentTokens: number;
+  private readonly model: string | undefined;
 
   constructor(options: FilesystemAdapterOptions) {
     this.root = options.root;
@@ -47,6 +54,8 @@ export class FilesystemAdapter implements ContextAdapter {
     ];
     this.maxFiles = options.maxFiles ?? 20;
     this.maxFileSize = options.maxFileSize ?? 50_000;
+    this.maxContentTokens = options.maxContentTokens ?? 5000;
+    this.model = options.model;
   }
 
   async available(): Promise<boolean> {
@@ -93,22 +102,41 @@ export class FilesystemAdapter implements ContextAdapter {
     }
 
     const relevant = await this.findRelevantFiles(structure, input);
+    let tokensUsed = 0;
     for (const file of relevant.slice(0, 5)) {
+      if (tokensUsed >= this.maxContentTokens) break;
       try {
         const content = await readFile(file.path, "utf-8");
-        if (content.length <= this.maxFileSize) {
-          layers.push({
-            source: this.name,
-            priority: this.priority + 1,
-            timestamp: Date.now(),
-            data: {
-              filePath: file.relativePath,
-              content,
-              size: content.length,
-            },
-            summary: `File content: ${file.relativePath} (${content.length} chars)`,
-          });
+        if (content.length > this.maxFileSize) continue;
+
+        const remaining = this.maxContentTokens - tokensUsed;
+        const fileTokens = estimateTokens(content, this.model);
+        let included = content;
+        let truncated = false;
+        if (fileTokens > remaining) {
+          const ratio = remaining / fileTokens;
+          included = content.slice(0, Math.max(0, Math.floor(content.length * ratio)));
+          truncated = true;
         }
+        const includedTokens = estimateTokens(included, this.model);
+        tokensUsed += includedTokens;
+
+        layers.push({
+          source: this.name,
+          priority: this.priority + 1,
+          timestamp: Date.now(),
+          data: {
+            filePath: file.relativePath,
+            content: included,
+            size: included.length,
+            originalSize: content.length,
+            truncated,
+            estimatedTokens: includedTokens,
+          },
+          summary: truncated
+            ? `File content (truncated): ${file.relativePath} (${included.length}/${content.length} chars, ~${includedTokens} tokens)`
+            : `File content: ${file.relativePath} (${content.length} chars, ~${includedTokens} tokens)`,
+        });
       } catch {
         // unreadable file, skip
       }

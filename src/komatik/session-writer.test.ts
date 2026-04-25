@@ -125,8 +125,40 @@ describe("KomatikSessionWriter", () => {
       ]);
 
       const fromResult = (client.from as ReturnType<typeof vi.fn>).mock.results[0]!.value;
-      const upsertArg = fromResult.upsert.mock.calls[0]![0] as unknown[];
-      expect(upsertArg).toHaveLength(2);
+      const upsertCalls = fromResult.upsert.mock.calls;
+      const lastUpsert = upsertCalls[upsertCalls.length - 1]![0] as unknown[];
+      expect(lastUpsert).toHaveLength(2);
+    });
+
+    it("dedupes identical entries within the same batch", async () => {
+      const client = createMockWriteClient();
+      const writer = new KomatikSessionWriter(client);
+
+      await writer.writeMemories("user-1", [
+        makeMemoryInput({ contextKey: "k1", content: "Chose PostgreSQL over MySQL" }),
+        makeMemoryInput({ contextKey: "k2", content: "Chose PostgreSQL over MySQL" }),
+        makeMemoryInput({ contextKey: "k3", content: "  CHOSE   postgresql over MySQL  " }),
+      ]);
+
+      const fromResult = (client.from as ReturnType<typeof vi.fn>).mock.results[0]!.value;
+      const upsertCalls = fromResult.upsert.mock.calls;
+      const lastUpsert = upsertCalls[upsertCalls.length - 1]![0] as unknown[];
+      expect(lastUpsert).toHaveLength(1);
+    });
+
+    it("dedupes against existing memories when the cross-session lookup succeeds", async () => {
+      const client = createMockWriteClient({
+        selectData: [{ content: "Chose PostgreSQL over MySQL" }],
+      });
+      const writer = new KomatikSessionWriter(client);
+
+      await writer.writeMemories("user-1", [
+        makeMemoryInput({ content: "chose postgresql over mysql" }),
+      ]);
+
+      const fromResult = (client.from as ReturnType<typeof vi.fn>).mock.results[0]!.value;
+      // The dedupe path queried existing rows; everything was a duplicate so no upsert ran.
+      expect(fromResult.upsert).not.toHaveBeenCalled();
     });
   });
 
