@@ -162,4 +162,23 @@ describe("estimateTokens", () => {
     expect(estimateTokens("a".repeat(100))).toBe(25);
     expect(estimateTokens("")).toBe(0);
   });
+
+  it("uses a smaller chars/token ratio for Claude models", () => {
+    const text = "a".repeat(100);
+    const generic = estimateTokens(text);
+    const claude = estimateTokens(text, "claude-sonnet-4-6");
+    expect(claude).toBeGreaterThan(generic);
+  });
+
+  it("falls back to default ratio for unknown models", () => {
+    const text = "a".repeat(100);
+    expect(estimateTokens(text, "some-unknown-model")).toBe(estimateTokens(text));
+  });
+
+  it("SessionMonitor uses configured model for accumulation", () => {
+    const monitor = new SessionMonitor({ tokenBudget: 100_000, model: "claude-sonnet" });
+    monitor.track("a".repeat(100), [{ role: "user", content: "ctx" }]);
+    // 100 chars / 3.5 ≈ 29 tokens, plus the same for `enrichedMessage` (none here, so just 29)
+    expect(monitor.getState().estimatedTokens).toBe(29);
+  });
 });

@@ -132,6 +132,20 @@ export interface EnrichmentMetadata {
   strategyUsed: string;
   targetPlatform: TargetPlatform;
   modelRecommendation?: ModelRecommendation;
+  tokens?: TokenAccounting;
+}
+
+/**
+ * Per-call token accounting. All values are estimates (chars / chars-per-token);
+ * accuracy improves when SessionMonitorConfig.model is set.
+ */
+export interface TokenAccounting {
+  originalMessage: number;
+  enrichedMessage: number;
+  context: number;
+  contextByAdapter: Record<string, number>;
+  /** enrichedMessage - originalMessage. Negative if enrichment shortened the message (rare). */
+  overhead: number;
 }
 
 // ─── Platform Targeting ─────────────────────────────────────────────────────
@@ -310,6 +324,8 @@ export interface SessionMonitorConfig {
   compactionThreshold?: number;
   writer?: SessionWriter;
   compactorLlmCall?: (prompt: string) => Promise<string>;
+  /** Model identifier (e.g. "claude-sonnet-4-6", "gpt-4o") used to pick a more accurate chars-per-token ratio. */
+  model?: string;
 }
 
 // ─── Model Routing ──────────────────────────────────────────────────────────

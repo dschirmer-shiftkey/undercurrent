@@ -183,4 +183,35 @@ describe("KomatikMemoryAdapter", () => {
     const adapter = new KomatikMemoryAdapter({ client, userId: "" });
     expect(await adapter.available()).toBe(false);
   });
+
+  it("respects maxRestoreTokens budget and flags truncation", async () => {
+    // 10 medium memories, ~18 tokens each (~72 chars / 4). Budget of 30 tokens
+    // fits 1 item; the second pushes past the budget and triggers truncation
+    // before the per-section cap (3 for decisions) would otherwise stop us.
+    const memories = Array.from({ length: 10 }).map((_, i) => ({
+      id: `mem-${i}`,
+      user_id: "user-budget",
+      memory_type: "decision" as const,
+      content: `decision number ${i} with sufficient padding to consume real budget tokens`,
+      context_key: null,
+      relevance_score: 1 - i * 0.01,
+      expires_at: futureDate,
+      created_at: "2026-04-15T10:00:00Z",
+      updated_at: "2026-04-15T10:00:00Z",
+    }));
+    const client = createMockClient({ session_memories: memories });
+
+    const adapter = new KomatikMemoryAdapter({
+      client,
+      userId: "user-budget",
+      maxRestoreTokens: 30,
+    });
+
+    const layers = await adapter.gather(stubInput);
+    expect(layers).toHaveLength(1);
+    const data = layers[0]!.data as { estimatedTokens: number; truncated: boolean };
+    expect(data.estimatedTokens).toBeLessThanOrEqual(30);
+    expect(data.truncated).toBe(true);
+    expect(layers[0]!.summary).toContain("[truncated]");
+  });
 });

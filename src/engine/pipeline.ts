@@ -17,13 +17,14 @@ import type {
   ProcessResult,
   SessionHealth,
   TargetPlatform,
+  TokenAccounting,
   UndercurrentConfig,
 } from "../types.js";
 import { Checkpointer } from "./checkpointer.js";
 import { Compactor } from "./compactor.js";
 import { ModelRouter } from "./model-router.js";
 import { KomatikModelUsageAdapter } from "../komatik/model-usage-adapter.js";
-import { SessionMonitor } from "./session-monitor.js";
+import { SessionMonitor, estimateTokens } from "./session-monitor.js";
 
 const PIPELINE_VERSION = "0.2.0";
 
@@ -201,6 +202,7 @@ export class Pipeline {
         adapterResults,
         strategyUsed: this.strategy.name,
         targetPlatform: platform,
+        tokens: this.computeTokens(input.message, enrichedMessage, context),
       },
     };
 
@@ -269,7 +271,10 @@ export class Pipeline {
           this.lastContext,
         );
         this.monitor.resetAfterCompaction(
-          compaction.recentExchanges.reduce((sum, t) => sum + Math.ceil(t.content.length / 4), 0),
+          compaction.recentExchanges.reduce(
+            (sum, t) => sum + estimateTokens(t.content, this.monitor!.model),
+            0,
+          ),
         );
         this.log("session compacted, saved ~", compaction.estimatedTokensSaved, "tokens");
       } catch {
@@ -371,7 +376,36 @@ export class Pipeline {
         adapterTimings: {},
         strategyUsed: this.strategy.name,
         targetPlatform: platform,
+        tokens: this.computeTokens(message, message, []),
       },
+    };
+  }
+
+  private computeTokens(
+    originalMessage: string,
+    enrichedMessage: string,
+    context: ContextLayer[],
+  ): TokenAccounting {
+    const model = this.monitor?.model;
+    const original = estimateTokens(originalMessage, model);
+    const enriched = estimateTokens(enrichedMessage, model);
+
+    const contextByAdapter: Record<string, number> = {};
+    let contextTotal = 0;
+    for (const layer of context) {
+      const layerTokens =
+        estimateTokens(layer.summary, model) +
+        estimateTokens(JSON.stringify(layer.data), model);
+      contextByAdapter[layer.source] = (contextByAdapter[layer.source] ?? 0) + layerTokens;
+      contextTotal += layerTokens;
+    }
+
+    return {
+      originalMessage: original,
+      enrichedMessage: enriched,
+      context: contextTotal,
+      contextByAdapter,
+      overhead: enriched - original,
     };
   }
 

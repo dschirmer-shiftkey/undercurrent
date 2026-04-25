@@ -330,4 +330,43 @@ describe("Pipeline", () => {
       expect(result.metadata.adapterResults).toBeUndefined();
     });
   });
+
+  describe("token accounting", () => {
+    it("reports tokens metadata on enriched results", async () => {
+      const adapter = stubAdapter("ctx", [
+        {
+          source: "ctx",
+          priority: 1,
+          timestamp: Date.now(),
+          data: { foo: "bar" },
+          summary: "some context summary text",
+        },
+      ]);
+      const pipeline = new Pipeline(makeConfig({ adapters: [adapter] }));
+      const result = await pipeline.enrich({
+        message: "help me think through this approach",
+      });
+
+      expect(result.metadata.tokens).toBeDefined();
+      const t = result.metadata.tokens!;
+      expect(t.originalMessage).toBeGreaterThan(0);
+      expect(t.enrichedMessage).toBeGreaterThanOrEqual(t.originalMessage);
+      expect(t.context).toBeGreaterThan(0);
+      expect(t.contextByAdapter["ctx"]).toBeGreaterThan(0);
+      expect(t.overhead).toBe(t.enrichedMessage - t.originalMessage);
+    });
+
+    it("reports tokens metadata on passthrough results", async () => {
+      const pipeline = new Pipeline(makeConfig());
+      const result = await pipeline.enrich({
+        message:
+          "fix the `calculateTotal` function on line 15 of utils.ts — it returns NaN",
+      });
+
+      expect(result.metadata.enrichmentDepth).toBe("none");
+      expect(result.metadata.tokens).toBeDefined();
+      expect(result.metadata.tokens!.context).toBe(0);
+      expect(result.metadata.tokens!.overhead).toBe(0);
+    });
+  });
 });

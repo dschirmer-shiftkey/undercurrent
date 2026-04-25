@@ -1,4 +1,5 @@
 import type { AdapterInput, ContextAdapter, ContextLayer } from "../types.js";
+import { estimateTokens } from "../engine/session-monitor.js";
 import type { KomatikAdapterOptions, KomatikDataClient } from "./client.js";
 import type { SessionMemory, MemoryType } from "./types.js";
 
@@ -20,11 +21,23 @@ export class KomatikMemoryAdapter implements ContextAdapter {
   private readonly client: KomatikDataClient;
   private readonly userId: string;
   private readonly maxMemories: number;
+  private readonly maxRestoreTokens: number;
+  private readonly model: string | undefined;
 
-  constructor(options: KomatikAdapterOptions & { maxMemories?: number }) {
+  constructor(
+    options: KomatikAdapterOptions & {
+      maxMemories?: number;
+      /** Total token cap on the restored summary across all memory types. Default 800. */
+      maxRestoreTokens?: number;
+      /** Model identifier — passed through to estimateTokens for accurate budgeting. */
+      model?: string;
+    },
+  ) {
     this.client = options.client;
     this.userId = options.userId;
     this.maxMemories = options.maxMemories ?? 30;
+    this.maxRestoreTokens = options.maxRestoreTokens ?? 800;
+    this.model = options.model;
   }
 
   async available(): Promise<boolean> {
@@ -59,37 +72,40 @@ export class KomatikMemoryAdapter implements ContextAdapter {
       byType.set(m.memory_type, list);
     }
 
+    const sections: Array<{ label: string; items: SessionMemory[]; cap: number }> = [
+      { label: "Active work", items: byType.get("active-work") ?? [], cap: 5 },
+      { label: "Recent decisions", items: byType.get("decision") ?? [], cap: 3 },
+      { label: "Unresolved", items: byType.get("unresolved") ?? [], cap: 5 },
+      { label: "Past corrections", items: byType.get("correction") ?? [], cap: 3 },
+      { label: "Learned", items: byType.get("preference-learned") ?? [], cap: 3 },
+    ];
+
     const parts: string[] = [];
-
-    const activeWork = byType.get("active-work");
-    if (activeWork && activeWork.length > 0) {
-      parts.push(`Active work: ${activeWork.map((m) => m.content).join("; ")}`);
-    }
-
-    const decisions = byType.get("decision");
-    if (decisions && decisions.length > 0) {
-      const topDecisions = decisions.slice(0, 3);
-      parts.push(`Recent decisions: ${topDecisions.map((m) => m.content).join("; ")}`);
-    }
-
-    const unresolved = byType.get("unresolved");
-    if (unresolved && unresolved.length > 0) {
-      parts.push(`Unresolved: ${unresolved.map((m) => m.content).join("; ")}`);
-    }
-
-    const corrections = byType.get("correction");
-    if (corrections && corrections.length > 0) {
-      parts.push(`Past corrections: ${corrections.map((m) => m.content).join("; ")}`);
-    }
-
-    const learned = byType.get("preference-learned");
-    if (learned && learned.length > 0) {
-      parts.push(`Learned: ${learned.map((m) => m.content).join("; ")}`);
+    let tokensUsed = 0;
+    let truncated = false;
+    for (const { label, items, cap } of sections) {
+      if (items.length === 0) continue;
+      // Items arrived ordered by relevance_score desc; cap and budget here.
+      const included: string[] = [];
+      for (const m of items.slice(0, cap)) {
+        const candidate = m.content;
+        const tokens = estimateTokens(`; ${candidate}`, this.model);
+        if (tokensUsed + tokens > this.maxRestoreTokens) {
+          truncated = true;
+          break;
+        }
+        included.push(candidate);
+        tokensUsed += tokens;
+      }
+      if (included.length > 0) {
+        parts.push(`${label}: ${included.join("; ")}`);
+      }
+      if (truncated) break;
     }
 
     const summary =
       parts.length > 0
-        ? `Session memory (${active.length} items): ${parts.join(". ")}`
+        ? `Session memory (${active.length} items): ${parts.join(". ")}${truncated ? " [truncated]" : ""}`
         : `Session memory: ${active.length} items stored`;
 
     return [
@@ -100,6 +116,8 @@ export class KomatikMemoryAdapter implements ContextAdapter {
         data: {
           memories: active,
           countByType: Object.fromEntries([...byType.entries()].map(([k, v]) => [k, v.length])),
+          estimatedTokens: tokensUsed,
+          truncated,
         },
         summary,
       },
