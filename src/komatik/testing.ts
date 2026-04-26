@@ -23,6 +23,12 @@ export function createMockClient(
       const rows = tables[table] ?? [];
       return createMockQueryBuilder(rows);
     },
+    rpc(functionName: string): PromiseLike<KomatikQueryResult<Record<string, unknown>[]>> {
+      return Promise.resolve({
+        data: null,
+        error: { message: `Mock RPC not implemented: ${functionName}` },
+      });
+    },
   };
 }
 

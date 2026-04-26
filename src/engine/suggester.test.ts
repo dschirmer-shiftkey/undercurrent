@@ -361,6 +361,11 @@ describe("Suggester.recordFeedback", () => {
 
     const client: KomatikWriteClient = {
       from: () => queryBuilder,
+      rpc: () =>
+        Promise.resolve({
+          data: null,
+          error: { message: "RPC not implemented in suggester test mock" },
+        }),
     };
 
     return { client, lastInsert: state.lastInsert };
