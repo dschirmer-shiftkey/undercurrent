@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-04-25
+
+### Added
+
+#### Token-waste reduction (PR #35)
+- `metadata.tokens` (`TokenAccounting`) on every enrichment result — `{ originalMessage, enrichedMessage, context, contextByAdapter, overhead }` for granular per-adapter accounting
+- `metadata.budget` (`BudgetMeter`) when `sessionMonitor` is configured — `{ used, budget, available, utilization, pressure, perAdapter, trend }` with low/moderate/high/critical pressure levels
+- Per-model token estimation in `SessionMonitor` — Claude/GPT/Gemini-aware chars-per-token lookup replaces the fixed 4-chars/token heuristic
+- `FilesystemAdapter.maxContentTokens` budget — slices file contents to fit, annotates layers with `truncated: boolean` and `estimatedTokens: number` (default 5000 tokens, replaces unbounded 5×50KB ceiling)
+- `KomatikMemoryAdapter.maxRestoreTokens` cap — handoff restoration respects a token budget and appends `[truncated]` when reached
+- `KomatikSessionWriter` dedup — within-batch + cross-session normalized-content dedup before upsert; query failures gracefully fall back to within-batch only
+- Re-read detection in `ConversationAdapter` — flags file paths and grep queries fetched 2+ times across recent assistant turns
+- Abandonment detection in `ConversationAdapter` — pivot regexes (`scratch that`, `different approach`, `actually let's…`) tag preceding turns as superseded
+- Drift+age compaction trigger in `SessionMonitor` — 3+ topic shifts AND >30min elapsed → `degrading` health even below the 65% token threshold
+
+#### Follow-up suggestions (PR #32)
+- `Undercurrent.suggestFollowups()` — experimental post-response reflection; given the user's message and the agent's response, returns 3-5 auto-complete prompt suggestions categorized as `continue` / `amend` / `stop`
+- `Undercurrent.recordSuggestionFeedback()` — logs `accepted` / `dismissed` / `edited` outcomes back to `enrichment_outcomes` for the scoring loop
+- `suggest_followups` and `record_suggestion_feedback` MCP tools
+
+### Changed
+- External positioning leads with "context engineering and personalization SDK" — `package.json` description, `README.md` hero, MCP `enrich` tool description, `AGENTS.md` project-section opener (PR #36)
+- MCP server identity version aligned to package version (was hardcoded `0.2.0` since 0.2 → 0.3 transition)
+
 ## [0.3.1] - 2026-04-23
 
 ### Added
