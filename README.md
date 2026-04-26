@@ -1,6 +1,8 @@
 # Undercurrent
 
-A digital translation device for AI systems. Turns vague human input into precise, context-rich prompts — invisibly, before the AI ever sees the message.
+**A context engineering and personalization layer for AI.** Invisibly transforms vague human messages into structured, context-rich prompts — before the model ever sees them.
+
+Think of it as a translation device sitting between humans and AI: you speak naturally, Undercurrent fills in what you meant from your conversation, files, history, and preferences.
 
 **Undercurrent is the container, not the contents.** It provides the enrichment pipeline, plugin architecture, and protocol. You bring your own context sources (adapters), enrichment logic (strategies), and integration method (transports).
 

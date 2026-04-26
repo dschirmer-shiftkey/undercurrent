@@ -584,7 +584,7 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 
 ### Undercurrent — Developer Context
 
-**What this is**: An invisible prompt enrichment SDK (`@komatik/undercurrent`) — 4-stage pipeline that transforms vague human messages into structured, context-rich prompts before the AI sees them.
+**What this is**: Undercurrent (`@komatik/undercurrent`) — a context engineering and personalization SDK. 4-stage pipeline that invisibly transforms vague human messages into structured, context-rich prompts before the model sees them. Internally we call it the "translation device."
 
 **Stack**: TypeScript 6.0+, ESM-only, Node 20+, zero runtime dependencies. Dev deps: vitest, typescript, @types/node, @modelcontextprotocol/sdk, zod.
 
