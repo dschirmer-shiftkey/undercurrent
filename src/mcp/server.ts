@@ -90,9 +90,10 @@ function registerTools(server: McpServer, undercurrent: Undercurrent): void {
     {
       title: "Enrich Prompt",
       description:
-        "Run a message through the Undercurrent 4-stage enrichment pipeline with full " +
-        "Komatik user context. Returns the enriched prompt, intent classification, " +
-        "assumptions made, gaps identified, and processing metadata.",
+        "Context engineering pipeline: runs a message through Undercurrent's 4-stage " +
+        "enrichment (classify → harvest → analyze → compose) with full Komatik user " +
+        "context. Returns the enriched prompt, intent classification, assumptions made, " +
+        "gaps identified, and processing metadata.",
       inputSchema: {
         message: z.string().describe("The raw user message to enrich"),
         conversation: z
