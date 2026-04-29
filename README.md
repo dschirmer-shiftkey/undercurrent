@@ -13,9 +13,9 @@ Every human message to an AI system is a lossy compression of their actual inten
 ## Quick Start
 
 ```ts
-import { Undercurrent } from "@komatik/undercurrent";
-import { ConversationAdapter, GitAdapter, FilesystemAdapter } from "@komatik/undercurrent/adapters";
-import { DefaultStrategy } from "@komatik/undercurrent/strategies";
+import { Undercurrent } from "@komatik/slipstream";
+import { ConversationAdapter, GitAdapter, FilesystemAdapter } from "@komatik/slipstream/adapters";
+import { DefaultStrategy } from "@komatik/slipstream/strategies";
 
 const uc = new Undercurrent({
   adapters: [
@@ -127,7 +127,7 @@ interface ContextAdapter {
 }
 ```
 
-**Built-in generic adapters** (`@komatik/undercurrent/adapters`):
+**Built-in generic adapters** (`@komatik/slipstream/adapters`):
 
 
 | Adapter               | What It Gathers                                           |
@@ -137,7 +137,7 @@ interface ContextAdapter {
 | `FilesystemAdapter`   | Project structure, recent files, relevance-scored content |
 
 
-**Komatik identity adapters** (`@komatik/undercurrent/komatik`) — make enrichment identity-aware via Komatik ID (Supabase user UUID):
+**Komatik identity adapters** (`@komatik/slipstream/komatik`) — make enrichment identity-aware via Komatik ID (Supabase user UUID):
 
 
 | Adapter                     | Source Table(s)                          | What It Gathers                                        |
@@ -178,7 +178,7 @@ Ships with:
 #### LlmStrategy
 
 ```ts
-import { LlmStrategy } from "@komatik/undercurrent/strategies";
+import { LlmStrategy } from "@komatik/slipstream/strategies";
 
 const strategy = new LlmStrategy({
   llmCall: async (prompt) => {
@@ -329,9 +329,9 @@ uc.setHooks({
 Full end-to-end wiring for a Komatik product (Triage, Floe, Forge, or the platform). This shows every subsystem connected — identity-aware adapters, LLM strategy, session lifecycle, and model routing:
 
 ```ts
-import { Undercurrent } from "@komatik/undercurrent";
-import { ConversationAdapter, GitAdapter, FilesystemAdapter } from "@komatik/undercurrent/adapters";
-import { LlmStrategy } from "@komatik/undercurrent/strategies";
+import { Undercurrent } from "@komatik/slipstream";
+import { ConversationAdapter, GitAdapter, FilesystemAdapter } from "@komatik/slipstream/adapters";
+import { LlmStrategy } from "@komatik/slipstream/strategies";
 import {
   KomatikIdentityAdapter,
   KomatikPreferenceAdapter,
@@ -341,7 +341,7 @@ import {
   KomatikMarketplaceAdapter,
   KomatikOutcomeAdapter,
   KomatikSessionWriter,
-} from "@komatik/undercurrent/komatik";
+} from "@komatik/slipstream/komatik";
 
 // 1. Identity-aware adapters — generic + Komatik ecosystem
 const adapters = [
@@ -424,7 +424,7 @@ undercurrent/
 │   │   ├── conversation.ts           # Decisions, topics, terminology from chat history
 │   │   ├── filesystem.ts             # Project structure, recent files, relevance-scored content
 │   │   └── git.ts                    # Branch, commits, diff, working tree state
-│   ├── komatik/                      # Komatik identity layer (@komatik/undercurrent/komatik)
+│   ├── komatik/                      # Komatik identity layer (@komatik/slipstream/komatik)
 │   │   ├── client.ts                 # KomatikDataClient + KomatikWriteClient interfaces
 │   │   ├── types.ts                  # Row types for all ecosystem Supabase tables
 │   │   ├── identity-adapter.ts       # komatik_profiles → who is this user
@@ -442,7 +442,7 @@ undercurrent/
 │   │   ├── llm.ts                    # LLM-assisted (pluggable llmCall, DefaultStrategy fallback)
 │   │   ├── komatik-pipeline.ts       # Domain-specific Komatik marketplace enrichment
 │   │   └── platform-composer.ts      # Platform-aware output formatting (6 targets)
-│   ├── mcp/                          # External MCP server (@komatik/undercurrent/mcp)
+│   ├── mcp/                          # External MCP server (@komatik/slipstream/mcp)
 │   │   ├── postgrest-client.ts       # Lightweight PostgREST adapter (native fetch)
 │   │   ├── server.ts                 # McpServer: 2 tools, 7 resources, 1 prompt
 │   │   └── index.ts                  # Bin entry (undercurrent-mcp)
