@@ -8,6 +8,10 @@
 
 export interface KomatikDataClient {
   from(table: string): KomatikQueryBuilder;
+  rpc(
+    functionName: string,
+    params?: Record<string, unknown>,
+  ): PromiseLike<KomatikQueryResult<Record<string, unknown> | Record<string, unknown>[]>>;
 }
 
 export interface KomatikQueryBuilder {

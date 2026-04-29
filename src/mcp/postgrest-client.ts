@@ -23,7 +23,58 @@ export function createPostgRESTClient(options: PostgRESTClientOptions): KomatikD
     from(table: string): KomatikQueryBuilder {
       return new PostgRESTQueryBuilder(restUrl, options.apiKey, table);
     },
+    rpc(
+      functionName: string,
+      params?: Record<string, unknown>,
+    ): PromiseLike<KomatikQueryResult<Record<string, unknown> | Record<string, unknown>[]>> {
+      return executeRpc(restUrl, options.apiKey, functionName, params);
+    },
   };
+}
+
+async function executeRpc(
+  restUrl: string,
+  apiKey: string,
+  functionName: string,
+  params?: Record<string, unknown>,
+): Promise<KomatikQueryResult<Record<string, unknown> | Record<string, unknown>[]>> {
+  const url = `${restUrl}/rpc/${encodeURIComponent(functionName)}`;
+  const headers: Record<string, string> = {
+    apikey: apiKey,
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(params ?? {}),
+    });
+
+    const body = await response.text();
+
+    if (!response.ok) {
+      let message = `PostgREST RPC error: ${response.status} ${response.statusText}`;
+      try {
+        const parsed = JSON.parse(body) as { message?: string; code?: string };
+        if (parsed.message) message = parsed.message;
+        return { data: null, error: { message, code: parsed.code } };
+      } catch {
+        return { data: null, error: { message } };
+      }
+    }
+
+    if (!body) {
+      return { data: null, error: null };
+    }
+
+    const data = JSON.parse(body) as Record<string, unknown> | Record<string, unknown>[];
+    return { data, error: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown fetch error";
+    return { data: null, error: { message } };
+  }
 }
 
 class PostgRESTQueryBuilder implements KomatikQueryBuilder {

@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { createUndercurrentMcpServer } from "./server.js";
 import { createMockClient } from "../komatik/testing.js";
+import type {
+  KomatikQueryResult,
+  KomatikWriteClient,
+  KomatikWriteFilterBuilder,
+  KomatikWriteQueryBuilder,
+} from "../komatik/client.js";
 
 type RegisteredTool = {
   handler: (
@@ -29,6 +35,158 @@ function getInternals(server: unknown): McpServerInternals {
 }
 
 const EXTRA = {} as unknown;
+
+interface ToolCacheRow {
+  user_id: string;
+  workspace_id?: string;
+  session_id?: string;
+  tool_slug: string;
+  request_hash: string;
+  request_summary: string;
+  content_hash: string;
+  content_size_bytes: number;
+  content_token_estimate: number;
+  result_text: string | null;
+  memory_tier: "session" | "workspace";
+  hit_count: number;
+  created_at: string;
+  expires_at: string;
+}
+
+function buildMockWriteClient(rows: ToolCacheRow[] = []): KomatikWriteClient {
+  return {
+    from(table: string): KomatikWriteQueryBuilder {
+      return {
+        select(): KomatikWriteFilterBuilder {
+          return createResolvedFilterBuilder([]);
+        },
+        insert(data: Record<string, unknown> | Record<string, unknown>[]): KomatikWriteFilterBuilder {
+          if (table === "tool_result_cache") {
+            const records = Array.isArray(data) ? data : [data];
+            for (const record of records) {
+              rows.push({
+                user_id: String(record.user_id),
+                workspace_id:
+                  typeof record.workspace_id === "string" ? record.workspace_id : undefined,
+                session_id: typeof record.session_id === "string" ? record.session_id : undefined,
+                tool_slug: String(record.tool_slug),
+                request_hash: String(record.request_hash),
+                request_summary: String(record.request_summary),
+                content_hash: String(record.content_hash),
+                content_size_bytes: Number(record.content_size_bytes),
+                content_token_estimate: Number(record.content_token_estimate),
+                result_text: typeof record.result_text === "string" ? record.result_text : null,
+                memory_tier:
+                  record.memory_tier === "workspace" || record.memory_tier === "session"
+                    ? record.memory_tier
+                    : "session",
+                hit_count: 0,
+                created_at: new Date().toISOString(),
+                expires_at: String(record.expires_at),
+              });
+            }
+          }
+          return createResolvedFilterBuilder([]);
+        },
+        upsert(): KomatikWriteFilterBuilder {
+          return createResolvedFilterBuilder([]);
+        },
+        delete(): KomatikWriteFilterBuilder {
+          return createResolvedFilterBuilder([]);
+        },
+        update(): KomatikWriteFilterBuilder {
+          return createResolvedFilterBuilder([]);
+        },
+      };
+    },
+    rpc(
+      functionName: string,
+      params?: Record<string, unknown>,
+    ): PromiseLike<KomatikQueryResult<Record<string, unknown>[]>> {
+      if (functionName !== "lookup_tool_result_cache") {
+        return Promise.resolve({
+          data: null,
+          error: { message: `Unexpected RPC: ${functionName}` },
+        });
+      }
+      const candidate = rows
+        .filter(
+          (row) =>
+            row.user_id === params?.p_user_id &&
+            row.tool_slug === params?.p_tool_slug &&
+            row.request_hash === params?.p_request_hash &&
+            new Date(row.expires_at).getTime() > Date.now() &&
+            (!params?.p_memory_tier || row.memory_tier === params.p_memory_tier),
+        )
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+
+      if (!candidate) {
+        return Promise.resolve({ data: [], error: null });
+      }
+
+      candidate.hit_count += 1;
+      return Promise.resolve({
+        data: [
+          {
+            content_hash: candidate.content_hash,
+            content_size_bytes: candidate.content_size_bytes,
+            content_token_estimate: candidate.content_token_estimate,
+            result_text: candidate.result_text,
+            hit_count: candidate.hit_count,
+            memory_tier: candidate.memory_tier,
+            created_at: candidate.created_at,
+          },
+        ],
+        error: null,
+      });
+    },
+  };
+}
+
+function createResolvedFilterBuilder(
+  rows: Record<string, unknown>[],
+): KomatikWriteFilterBuilder {
+  const result: KomatikQueryResult<Record<string, unknown>[]> = { data: rows, error: null };
+  const builder: KomatikWriteFilterBuilder = {
+    eq(): KomatikWriteFilterBuilder {
+      return builder;
+    },
+    neq(): KomatikWriteFilterBuilder {
+      return builder;
+    },
+    in(): KomatikWriteFilterBuilder {
+      return builder;
+    },
+    lt(): KomatikWriteFilterBuilder {
+      return builder;
+    },
+    order(): KomatikWriteFilterBuilder {
+      return builder;
+    },
+    limit(): KomatikWriteFilterBuilder {
+      return builder;
+    },
+    single(): PromiseLike<KomatikQueryResult<Record<string, unknown>>> {
+      return Promise.resolve({
+        data: rows[0] ?? null,
+        error: rows[0] ? null : { message: "No rows found" },
+      });
+    },
+    then<TResult1 = KomatikQueryResult<Record<string, unknown>[]>, TResult2 = never>(
+      onfulfilled?:
+        | ((value: KomatikQueryResult<Record<string, unknown>[]>) => TResult1 | PromiseLike<TResult1>)
+        | null,
+      onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+    ): PromiseLike<TResult1 | TResult2> {
+      return Promise.resolve(result).then(onfulfilled, onrejected);
+    },
+  };
+  return builder;
+}
+
+function parseToolPayload(result: { content: Array<{ text: string }> }): Record<string, unknown> {
+  return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+}
 
 function buildMockConfig() {
   const client = createMockClient({
@@ -211,6 +369,163 @@ describe("get_context tool", () => {
     const text = result.content[0]!.text;
     const parsed = JSON.parse(text) as { layers: unknown[] };
     expect(parsed.layers).toEqual([]);
+  });
+});
+
+describe("digest_tool_result tool", () => {
+  it("returns firstSeen and inserts a new cache row", async () => {
+    const rows: ToolCacheRow[] = [];
+    const server = createUndercurrentMcpServer({
+      ...buildMockConfig(),
+      writeClient: buildMockWriteClient(rows),
+    });
+    const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
+
+    const result = await tool.handler(
+      {
+        toolSlug: "read_file",
+        requestSummary: "read package.json",
+        requestKey: { path: "package.json" },
+        result: '{"name":"undercurrent"}',
+      },
+      EXTRA,
+    );
+
+    const parsed = parseToolPayload(result);
+    expect(parsed.firstSeen).toBe(true);
+    expect(parsed.cached).toBe(false);
+    expect(parsed.result).toBe('{"name":"undercurrent"}');
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.result_text).toBe('{"name":"undercurrent"}');
+  });
+
+  it("returns a cache reference for repeated identical content", async () => {
+    const rows: ToolCacheRow[] = [];
+    const writeClient = buildMockWriteClient(rows);
+    const server = createUndercurrentMcpServer({ ...buildMockConfig(), writeClient });
+    const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
+    const args = {
+      toolSlug: "read_file",
+      requestSummary: "read package.json",
+      requestKey: { path: "package.json" },
+      result: '{"name":"undercurrent"}',
+    };
+
+    await tool.handler(args, EXTRA);
+    const result = await tool.handler(args, EXTRA);
+
+    const parsed = parseToolPayload(result);
+    expect(parsed.cached).toBe(true);
+    expect(parsed.ref).toBeDefined();
+    expect(parsed.note).toContain("tokens elided");
+    expect(parsed.hitCount).toBe(2);
+    expect(rows.length).toBe(1);
+  });
+
+  it("returns fresh content and flags drift when the same request changes", async () => {
+    const rows: ToolCacheRow[] = [];
+    const writeClient = buildMockWriteClient(rows);
+    const server = createUndercurrentMcpServer({ ...buildMockConfig(), writeClient });
+    const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
+
+    await tool.handler(
+      {
+        toolSlug: "read_file",
+        requestSummary: "read src/index.ts",
+        requestKey: { path: "src/index.ts" },
+        result: "export const version = '0.3.1';",
+      },
+      EXTRA,
+    );
+    const result = await tool.handler(
+      {
+        toolSlug: "read_file",
+        requestSummary: "read src/index.ts",
+        requestKey: { path: "src/index.ts" },
+        result: "export const version = '0.4.1';",
+      },
+      EXTRA,
+    );
+
+    const parsed = parseToolPayload(result);
+    expect(parsed.drifted).toBe(true);
+    expect(parsed.result).toBe("export const version = '0.4.1';");
+    expect(rows.length).toBe(2);
+  });
+
+  it("passes through unchanged when no write client is configured", async () => {
+    const server = createUndercurrentMcpServer(buildMockConfig());
+    const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
+
+    const result = await tool.handler(
+      {
+        toolSlug: "read_file",
+        requestSummary: "read package.json",
+        requestKey: { path: "package.json" },
+        result: "fresh content",
+      },
+      EXTRA,
+    );
+
+    const parsed = parseToolPayload(result);
+    expect(parsed.firstSeen).toBe(true);
+    expect(parsed.result).toBe("fresh content");
+    expect(parsed.meta).toEqual({ reason: "no_write_client_configured" });
+  });
+
+  it("canonicalizes object request keys", async () => {
+    const rows: ToolCacheRow[] = [];
+    const writeClient = buildMockWriteClient(rows);
+    const server = createUndercurrentMcpServer({ ...buildMockConfig(), writeClient });
+    const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
+
+    await tool.handler(
+      {
+        toolSlug: "search_files",
+        requestSummary: "search TODO",
+        requestKey: { pattern: "TODO", glob: "*.ts" },
+        result: "src/index.ts:1:TODO",
+      },
+      EXTRA,
+    );
+    const result = await tool.handler(
+      {
+        toolSlug: "search_files",
+        requestSummary: "search TODO",
+        requestKey: { glob: "*.ts", pattern: "TODO" },
+        result: "src/index.ts:1:TODO",
+      },
+      EXTRA,
+    );
+
+    const parsed = parseToolPayload(result);
+    expect(parsed.cached).toBe(true);
+    expect(rows.length).toBe(1);
+  });
+
+  it("stores oversized results as ref-only", async () => {
+    const rows: ToolCacheRow[] = [];
+    const server = createUndercurrentMcpServer({
+      ...buildMockConfig(),
+      writeClient: buildMockWriteClient(rows),
+    });
+    const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
+    const largeResult = "x".repeat(100_001);
+
+    const result = await tool.handler(
+      {
+        toolSlug: "read_file",
+        requestSummary: "read large file",
+        requestKey: { path: "large.txt" },
+        result: largeResult,
+      },
+      EXTRA,
+    );
+
+    const parsed = parseToolPayload(result);
+    expect(parsed.firstSeen).toBe(true);
+    expect(rows[0]!.result_text).toBeNull();
+    expect(rows[0]!.content_size_bytes).toBe(100_001);
   });
 });
 

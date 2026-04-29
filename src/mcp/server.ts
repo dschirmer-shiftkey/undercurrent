@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Undercurrent } from "../index.js";
+import { estimateTokens } from "../engine/session-monitor.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import { KomatikIdentityAdapter } from "../komatik/identity-adapter.js";
 import { KomatikHistoryAdapter } from "../komatik/history-adapter.js";
@@ -59,7 +61,7 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
     { capabilities: { logging: {} } },
   );
 
-  registerTools(server, undercurrent);
+  registerTools(server, undercurrent, userId, writeClient);
   registerResources(
     server,
     identityAdapter,
@@ -84,7 +86,12 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
   return server;
 }
 
-function registerTools(server: McpServer, undercurrent: Undercurrent): void {
+function registerTools(
+  server: McpServer,
+  undercurrent: Undercurrent,
+  userId: string,
+  writeClient?: KomatikWriteClient,
+): void {
   server.registerTool(
     "enrich",
     {
@@ -311,6 +318,248 @@ function registerTools(server: McpServer, undercurrent: Undercurrent): void {
       };
     },
   );
+
+  server.registerTool(
+    "digest_tool_result",
+    {
+      title: "Digest Tool Result",
+      description:
+        "Deduplicates repeated tool output within a session or workspace. Submit raw " +
+        "tool output before injecting it into model context; repeated identical bytes " +
+        "return a compact reference instead of the full result.",
+      inputSchema: {
+        toolSlug: z
+          .string()
+          .describe("Stable tool identifier, e.g. read_file, search_files, bash, call_mcp_tool."),
+        requestSummary: z
+          .string()
+          .describe("Human-readable request description, e.g. read package.json."),
+        requestKey: z
+          .union([z.string(), z.record(z.string(), z.unknown())])
+          .describe("Request payload; object keys are sorted before hashing."),
+        result: z.string().describe("Raw tool output."),
+        memoryTier: z
+          .enum(["session", "workspace"])
+          .optional()
+          .describe("Default: session. Use workspace only for stable cross-session artifacts."),
+        workspaceId: z.string().optional().describe("Optional Komatik workspace id."),
+        sessionId: z.string().optional().describe("Optional host IDE session id."),
+        model: z.string().optional().describe("Model id used for token estimation metadata."),
+      },
+    },
+    async (args) => {
+      const tier = args.memoryTier ?? "session";
+      const requestHash = sha256Hex(canonicalizeRequest(args.requestKey));
+      const contentHash = sha256Hex(args.result);
+      const contentSizeBytes = Buffer.byteLength(args.result, "utf-8");
+      const contentTokenEstimate = estimateTokens(args.result);
+
+      if (!writeClient) {
+        return passThrough(args.result, { reason: "no_write_client_configured" });
+      }
+
+      const lookup = await writeClient.rpc("lookup_tool_result_cache", {
+        p_user_id: userId,
+        p_tool_slug: args.toolSlug,
+        p_request_hash: requestHash,
+        p_memory_tier: tier,
+      });
+
+      if (lookup.error) {
+        return passThrough(args.result, {
+          reason: "cache_lookup_failed",
+          message: lookup.error.message,
+        });
+      }
+
+      const existing = firstRow(lookup.data);
+
+      if (existing && existing.contentHash === contentHash) {
+        const nextHitCount = existing.hitCount + 1;
+        return mcpResult({
+          cached: true,
+          ref: contentHash,
+          note:
+            `Identical to prior tool call (${args.requestSummary}). ` +
+            `${existing.contentSizeBytes} bytes / ~${existing.contentTokenEstimate} tokens elided. ` +
+            `First seen ${existing.createdAt}, hit ${nextHitCount}x.`,
+          toolSlug: args.toolSlug,
+          requestSummary: args.requestSummary,
+          firstSeenAt: existing.createdAt,
+          hitCount: nextHitCount,
+          memoryTier: existing.memoryTier,
+        });
+      }
+
+      const insertError = await insertToolResultCache(writeClient, {
+        userId,
+        workspaceId: args.workspaceId,
+        sessionId: args.sessionId,
+        toolSlug: args.toolSlug,
+        requestHash,
+        requestSummary: args.requestSummary,
+        contentHash,
+        contentSizeBytes,
+        contentTokenEstimate,
+        result: args.result,
+        memoryTier: tier,
+      });
+
+      if (existing && existing.contentHash !== contentHash) {
+        return mcpResult({
+          cached: false,
+          drifted: true,
+          previousHash: existing.contentHash,
+          currentHash: contentHash,
+          note:
+            `Same request as before (${args.requestSummary}), but content changed. ` +
+            (insertError ? `Returning fresh content; cache update failed: ${insertError}` : "Returning fresh content; cache updated."),
+          result: args.result,
+        });
+      }
+
+      return mcpResult({
+        cached: false,
+        firstSeen: true,
+        hash: contentHash,
+        note: insertError ? `Fresh result returned; cache insert failed: ${insertError}` : undefined,
+        result: args.result,
+      });
+    },
+  );
+}
+
+type MemoryTier = "session" | "workspace";
+
+interface ToolResultCacheEntry {
+  contentHash: string;
+  contentSizeBytes: number;
+  contentTokenEstimate: number;
+  resultText: string | null;
+  hitCount: number;
+  memoryTier: MemoryTier;
+  createdAt: string;
+}
+
+interface ToolResultCacheInsert {
+  userId: string;
+  workspaceId?: string;
+  sessionId?: string;
+  toolSlug: string;
+  requestHash: string;
+  requestSummary: string;
+  contentHash: string;
+  contentSizeBytes: number;
+  contentTokenEstimate: number;
+  result: string;
+  memoryTier: MemoryTier;
+}
+
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input, "utf-8").digest("hex");
+}
+
+function canonicalizeRequest(input: string | Record<string, unknown>): string {
+  if (typeof input === "string") return input;
+  return stableStringify(input);
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const entries = Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+  return `{${entries.join(",")}}`;
+}
+
+function firstRow(
+  data: Record<string, unknown> | Record<string, unknown>[] | null,
+): ToolResultCacheEntry | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  const contentHash = getString(row, "content_hash", "contentHash");
+  const memoryTier = getString(row, "memory_tier", "memoryTier");
+  if (!contentHash || (memoryTier !== "session" && memoryTier !== "workspace")) return null;
+
+  return {
+    contentHash,
+    contentSizeBytes: getNumber(row, "content_size_bytes", "contentSizeBytes"),
+    contentTokenEstimate: getNumber(row, "content_token_estimate", "contentTokenEstimate"),
+    resultText: getNullableString(row, "result_text", "resultText"),
+    hitCount: getNumber(row, "hit_count", "hitCount"),
+    memoryTier,
+    createdAt: getString(row, "created_at", "createdAt") ?? "unknown",
+  };
+}
+
+function getString(row: Record<string, unknown>, snakeKey: string, camelKey: string): string | null {
+  const value = row[snakeKey] ?? row[camelKey];
+  return typeof value === "string" ? value : null;
+}
+
+function getNullableString(
+  row: Record<string, unknown>,
+  snakeKey: string,
+  camelKey: string,
+): string | null {
+  const value = row[snakeKey] ?? row[camelKey];
+  return typeof value === "string" ? value : null;
+}
+
+function getNumber(row: Record<string, unknown>, snakeKey: string, camelKey: string): number {
+  const value = row[snakeKey] ?? row[camelKey];
+  return typeof value === "number" ? value : 0;
+}
+
+async function insertToolResultCache(
+  writeClient: KomatikWriteClient,
+  input: ToolResultCacheInsert,
+): Promise<string | null> {
+  const ttlSeconds = input.memoryTier === "session" ? 24 * 3600 : 168 * 3600;
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  const { error } = await writeClient.from("tool_result_cache").insert({
+    user_id: input.userId,
+    workspace_id: input.workspaceId,
+    session_id: input.sessionId,
+    tool_slug: input.toolSlug,
+    request_hash: input.requestHash,
+    request_summary: input.requestSummary,
+    content_hash: input.contentHash,
+    content_size_bytes: input.contentSizeBytes,
+    content_token_estimate: input.contentTokenEstimate,
+    result_text: input.contentSizeBytes > 100_000 ? null : input.result,
+    memory_tier: input.memoryTier,
+    expires_at: expiresAt,
+  });
+
+  return error?.message ?? null;
+}
+
+function mcpResult(payload: Record<string, unknown>) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(payload, null, 2),
+      },
+    ],
+  };
+}
+
+function passThrough(result: string, meta: Record<string, unknown>) {
+  return mcpResult({
+    cached: false,
+    firstSeen: true,
+    note: "digest_tool_result could not use the cache; passing through unchanged.",
+    meta,
+    result,
+  });
 }
 
 function registerResources(
