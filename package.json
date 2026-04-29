@@ -1,6 +1,6 @@
 {
   "name": "@komatik/undercurrent",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Context engineering and personalization SDK for AI — invisibly transforms vague human messages into structured, context-rich prompts before the model sees them.",
   "type": "module",
   "main": "./dist/index.js",
@@ -85,11 +85,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dschirmer-shiftkey/undercurrent.git"
+    "url": "git+https://github.com/KomatikAI/slipstream.git"
   },
-  "homepage": "https://github.com/dschirmer-shiftkey/undercurrent#readme",
+  "homepage": "https://github.com/KomatikAI/slipstream#readme",
   "bugs": {
-    "url": "https://github.com/dschirmer-shiftkey/undercurrent/issues"
+    "url": "https://github.com/KomatikAI/slipstream/issues"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
