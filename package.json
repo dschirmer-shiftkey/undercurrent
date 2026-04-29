@@ -1,5 +1,5 @@
 {
-  "name": "@komatik/undercurrent",
+  "name": "@komatik/slipstream",
   "version": "1.0.0",
   "description": "Context engineering and personalization SDK for AI — invisibly transforms vague human messages into structured, context-rich prompts before the model sees them.",
   "type": "module",

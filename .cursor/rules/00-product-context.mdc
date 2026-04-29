@@ -40,7 +40,7 @@ src/
 │   ├── compactor.ts         Context distillation (heuristic + LLM)
 │   ├── checkpointer.ts      Persistence via pluggable SessionWriter
 │   └── model-router.ts      TaskDomainClassifier, ModelScorer, ModelRouter
-├── komatik/           Komatik identity layer (@komatik/undercurrent/komatik)
+├── komatik/           Komatik identity layer (@komatik/slipstream/komatik)
 │   ├── client.ts      KomatikDataClient + KomatikWriteClient interfaces
 │   ├── types.ts       Row types for ecosystem Supabase tables
 │   ├── identity-adapter.ts   komatik_profiles → user identity
@@ -58,7 +58,7 @@ src/
 │   ├── conversation.ts  Chat history context
 │   ├── filesystem.ts    Project structure context
 │   └── git.ts           Branch/commit/diff context
-├── mcp/                 External MCP server (@komatik/undercurrent/mcp)
+├── mcp/                 External MCP server (@komatik/slipstream/mcp)
 │   ├── postgrest-client.ts  Lightweight PostgREST adapter (native fetch)
 │   ├── server.ts        McpServer: 2 tools, 7 resources, 1 prompt
 │   └── index.ts         Bin entry (undercurrent-mcp)
@@ -80,7 +80,7 @@ Three strategies ship with the SDK:
 
 ## Komatik Identity Layer
 
-Seven adapters in `src/komatik/` make Undercurrent identity-aware via the Komatik ID (Supabase user UUID). Import from `@komatik/undercurrent/komatik`.
+Seven adapters in `src/komatik/` make Undercurrent identity-aware via the Komatik ID (Supabase user UUID). Import from `@komatik/slipstream/komatik`.
 
 - **KomatikIdentityAdapter** (priority 0) — queries `komatik_profiles`. Who is this user, their role, products used.
 - **KomatikPreferenceAdapter** (priority 0) — queries `user_preferences`. Tone, style, code conventions, always/never assume rules.
@@ -120,7 +120,7 @@ Invisible context management that eliminates the "session tax". Configured via `
 
 Per-adapter status reporting in `EnrichmentMetadata.adapterResults`:
 - Every adapter reports status after harvest: `ok` (returned layers), `empty` (zero layers), `unavailable` (available() false), `error` (threw)
-- `AdapterResult` type exported from `@komatik/undercurrent`: `{ status, layerCount, error? }`
+- `AdapterResult` type exported from `@komatik/slipstream`: `{ status, layerCount, error? }`
 - Omitted for `depth: "none"` passthrough enrichments
 - Used by Komatik integration for debugging visibility
 
@@ -157,7 +157,7 @@ Per-user, per-domain model selection. Komatik-internal first. Configured via `Un
 
 ## npm
 
-- **Published**: `@komatik/undercurrent@0.3.0` on npmjs.com
+- **Published**: `@komatik/slipstream@0.3.0` on npmjs.com
 - **Scope**: `@komatik` org (public)
 - **CI release**: `release.yml` uses OIDC Trusted Publishing (`npm publish --provenance`). Triggered on `v*` tags.
 - **CJS compat**: All `package.json` export paths include `require` and `default` conditions alongside `import`, enabling `eval('require')` consumers (Turbopack workarounds).

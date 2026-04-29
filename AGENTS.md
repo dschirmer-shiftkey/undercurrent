@@ -584,7 +584,7 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 
 ### Undercurrent — Developer Context
 
-**What this is**: Undercurrent (`@komatik/undercurrent`) — a context engineering and personalization SDK. 4-stage pipeline that invisibly transforms vague human messages into structured, context-rich prompts before the model sees them. Internally we call it the "translation device."
+**What this is**: Undercurrent (`@komatik/slipstream`) — a context engineering and personalization SDK. 4-stage pipeline that invisibly transforms vague human messages into structured, context-rich prompts before the model sees them. Internally we call it the "translation device."
 
 **Stack**: TypeScript 6.0+, ESM-only, Node 20+, zero runtime dependencies. Dev deps: vitest, typescript, @types/node, @modelcontextprotocol/sdk, zod.
 
@@ -613,7 +613,7 @@ src/
 │   ├── conversation.ts      # Chat history (decisions, topics, terminology)
 │   ├── git.ts               # Branch, commits, diff, working tree
 │   └── filesystem.ts        # Project structure, recent files, relevant content
-├── komatik/                 # Komatik ecosystem identity layer (@komatik/undercurrent/komatik)
+├── komatik/                 # Komatik ecosystem identity layer (@komatik/slipstream/komatik)
 │   ├── client.ts            # KomatikDataClient + KomatikWriteClient interfaces
 │   ├── types.ts             # Row types for all Supabase tables (PR #800 + internal track)
 │   ├── identity-adapter.ts  # komatik_profiles → who is this user
@@ -626,7 +626,7 @@ src/
 │   ├── session-writer.ts    # KomatikSessionWriter → session_memories persistence
 │   ├── model-usage-adapter.ts # model_availability + llm_usage + enrichment_outcomes → scoring
 │   └── testing.ts           # createMockClient() for tests
-├── mcp/                     # External MCP server (@komatik/undercurrent/mcp)
+├── mcp/                     # External MCP server (@komatik/slipstream/mcp)
 │   ├── postgrest-client.ts  # Lightweight PostgREST adapter (native fetch, no Supabase SDK)
 │   ├── server.ts            # McpServer: 2 tools, 7 resources, 1 prompt
 │   └── index.ts             # Bin entry (undercurrent-mcp) — reads env vars, stdio transport
@@ -657,7 +657,7 @@ src/
 - 7 adapters query Supabase tables from Komatik ecosystem architecture
 - `KomatikDataClient` interface — accepts any Supabase client, zero deps
 - `EnrichInput.enrichmentContext` — optional per-message metadata (source app, session ID)
-- Import from `@komatik/undercurrent/komatik`
+- Import from `@komatik/slipstream/komatik`
 - Mock client for tests: `createMockClient()` from `src/komatik/testing.ts`
 - New internal track adapters (3 new tables):
   - `KomatikPreferenceAdapter` → `user_preferences` — tone, style, code conventions, always/never assume rules
@@ -671,7 +671,7 @@ src/
 - Prompts: `enrich-message` (system prompt pre-loaded with full user context from all 7 adapters)
 - `PostgREST client` — lightweight `KomatikDataClient` using native `fetch`, no `@supabase/supabase-js`
 - Env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATIK_USER_ID`
-- Import from `@komatik/undercurrent/mcp`; bin: `undercurrent-mcp`
+- Import from `@komatik/slipstream/mcp`; bin: `undercurrent-mcp`
 
 **Platform-aware composition** (`src/strategies/platform-composer.ts`):
 - Formats enriched output differently per target platform via `TargetPlatform` type

@@ -89,7 +89,7 @@ Transports live in `src/transports/`. They wrap the Pipeline for different HTTP 
 Seven adapters in `src/komatik/` implement `ContextAdapter` and query Supabase tables from the Komatik ecosystem. They accept a `KomatikDataClient` — a minimal interface that any Supabase client satisfies (defined in `src/komatik/client.ts`).
 
 ```typescript
-import { KomatikIdentityAdapter, KomatikPreferenceAdapter, KomatikMemoryAdapter } from "@komatik/undercurrent/komatik";
+import { KomatikIdentityAdapter, KomatikPreferenceAdapter, KomatikMemoryAdapter } from "@komatik/slipstream/komatik";
 
 new KomatikIdentityAdapter({ client: supabase, userId: user.id })
 ```
@@ -111,7 +111,7 @@ External Tool (Cursor/Claude) ←→ stdin/stdout JSON-RPC ←→ McpServer ←�
 ### Key files
 
 - `src/mcp/postgrest-client.ts` — Lightweight `KomatikDataClient` using native `fetch` against Supabase PostgREST API. No `@supabase/supabase-js`.
-- `src/mcp/server.ts` — `createUndercurrentMcpServer(config)` registers tools, resources, prompts. Import from `@komatik/undercurrent/mcp`.
+- `src/mcp/server.ts` — `createUndercurrentMcpServer(config)` registers tools, resources, prompts. Import from `@komatik/slipstream/mcp`.
 - `src/mcp/index.ts` — Bin entry point (`undercurrent-mcp`). Reads env vars, connects `StdioServerTransport`.
 
 ### MCP surface
