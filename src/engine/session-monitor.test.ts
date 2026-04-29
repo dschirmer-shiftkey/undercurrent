@@ -136,6 +136,30 @@ describe("SessionMonitor", () => {
     expect(monitor.getState().unresolvedItems).toEqual(["update docs"]);
   });
 
+  it("transitions to degrading on drift+age combo even below the token threshold", () => {
+    const monitor = new SessionMonitor({ tokenBudget: 1_000_000 });
+    // Force the session to look 31 minutes old.
+    const state = monitor.getState() as { startedAt: number };
+    (monitor as unknown as { state: { startedAt: number } }).state.startedAt =
+      Date.now() - 31 * 60 * 1000;
+
+    monitor.track("payment processing system with stripe integration", [
+      { role: "user", content: "ctx" },
+    ]);
+    monitor.track("kubernetes deployment configuration manifests", [
+      { role: "user", content: "ctx" },
+    ]);
+    monitor.track("rewrite the marketing site copy in french", [
+      { role: "user", content: "ctx" },
+    ]);
+    monitor.track("debug the photo upload widget on mobile safari", [
+      { role: "user", content: "ctx" },
+    ]);
+
+    expect(monitor.getState().topicShiftCount).toBeGreaterThanOrEqual(3);
+    expect(monitor.getHealth()).toBe("degrading");
+  });
+
   it("resetAfterCompaction reduces token count and recalculates health", () => {
     const monitor = new SessionMonitor({ tokenBudget: 1000 });
     const longMessage = "x".repeat(3500);
@@ -161,5 +185,24 @@ describe("estimateTokens", () => {
     expect(estimateTokens("hello")).toBe(2);
     expect(estimateTokens("a".repeat(100))).toBe(25);
     expect(estimateTokens("")).toBe(0);
+  });
+
+  it("uses a smaller chars/token ratio for Claude models", () => {
+    const text = "a".repeat(100);
+    const generic = estimateTokens(text);
+    const claude = estimateTokens(text, "claude-sonnet-4-6");
+    expect(claude).toBeGreaterThan(generic);
+  });
+
+  it("falls back to default ratio for unknown models", () => {
+    const text = "a".repeat(100);
+    expect(estimateTokens(text, "some-unknown-model")).toBe(estimateTokens(text));
+  });
+
+  it("SessionMonitor uses configured model for accumulation", () => {
+    const monitor = new SessionMonitor({ tokenBudget: 100_000, model: "claude-sonnet" });
+    monitor.track("a".repeat(100), [{ role: "user", content: "ctx" }]);
+    // 100 chars / 3.5 ≈ 29 tokens, plus the same for `enrichedMessage` (none here, so just 29)
+    expect(monitor.getState().estimatedTokens).toBe(29);
   });
 });

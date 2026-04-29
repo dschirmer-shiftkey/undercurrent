@@ -12,6 +12,30 @@ const DEFAULT_COMPACTION_THRESHOLD = 0.65;
 
 const CHARS_PER_TOKEN = 4;
 
+const CHARS_PER_TOKEN_BY_MODEL: Record<string, number> = {
+  "claude-opus": 3.5,
+  "claude-sonnet": 3.5,
+  "claude-haiku": 3.8,
+  "claude": 3.5,
+  "gpt-4": 4,
+  "gpt-4o": 3.8,
+  "gpt-4.1": 3.8,
+  "gpt-5": 3.8,
+  "o1": 4,
+  "o3": 4,
+  "gemini": 4,
+  "llama": 4,
+};
+
+function resolveCharsPerToken(model?: string): number {
+  if (!model) return CHARS_PER_TOKEN;
+  const lower = model.toLowerCase();
+  for (const [key, ratio] of Object.entries(CHARS_PER_TOKEN_BY_MODEL)) {
+    if (lower.includes(key)) return ratio;
+  }
+  return CHARS_PER_TOKEN;
+}
+
 interface HealthThresholds {
   warmRatio: number;
   degradingRatio: number;
@@ -19,6 +43,10 @@ interface HealthThresholds {
   warmTopicShifts: number;
   degradingTopicShifts: number;
   degradingDurationMs: number;
+  /** Topic-shift count that triggers degrading when paired with driftAgeMs. */
+  driftAgeTopicShifts: number;
+  /** Elapsed time that triggers degrading when paired with driftAgeTopicShifts. */
+  driftAgeMs: number;
 }
 
 const DEFAULT_THRESHOLDS: HealthThresholds = {
@@ -28,6 +56,8 @@ const DEFAULT_THRESHOLDS: HealthThresholds = {
   warmTopicShifts: 3,
   degradingTopicShifts: 6,
   degradingDurationMs: 60 * 60 * 1000,
+  driftAgeTopicShifts: 3,
+  driftAgeMs: 30 * 60 * 1000,
 };
 
 export class SessionMonitor {
@@ -36,12 +66,14 @@ export class SessionMonitor {
   readonly tokenBudget: number;
   readonly checkpointInterval: number;
   readonly compactionThreshold: number;
+  readonly model: string | undefined;
   private readonly thresholds: HealthThresholds;
 
   constructor(config?: SessionMonitorConfig) {
     this.tokenBudget = config?.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
     this.checkpointInterval = config?.checkpointInterval ?? DEFAULT_CHECKPOINT_INTERVAL;
     this.compactionThreshold = config?.compactionThreshold ?? DEFAULT_COMPACTION_THRESHOLD;
+    this.model = config?.model;
     this.thresholds = DEFAULT_THRESHOLDS;
 
     this.state = {
@@ -89,8 +121,8 @@ export class SessionMonitor {
   ): SessionHealth {
     this.state.messageCount += 1;
 
-    const messageTokens = estimateTokens(message);
-    const enrichedTokens = enrichedMessage ? estimateTokens(enrichedMessage) : 0;
+    const messageTokens = estimateTokens(message, this.model);
+    const enrichedTokens = enrichedMessage ? estimateTokens(enrichedMessage, this.model) : 0;
     this.state.estimatedTokens += messageTokens + enrichedTokens;
 
     this.detectTopicShift(message);
@@ -139,7 +171,8 @@ export class SessionMonitor {
     if (
       ratio >= this.thresholds.degradingRatio ||
       shifts >= this.thresholds.degradingTopicShifts ||
-      elapsed >= this.thresholds.degradingDurationMs
+      elapsed >= this.thresholds.degradingDurationMs ||
+      (shifts >= this.thresholds.driftAgeTopicShifts && elapsed >= this.thresholds.driftAgeMs)
     ) {
       return "degrading";
     }
@@ -200,8 +233,8 @@ export class SessionMonitor {
   }
 }
 
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
+export function estimateTokens(text: string, model?: string): number {
+  return Math.ceil(text.length / resolveCharsPerToken(model));
 }
 
 function extractTopicKeywords(message: string): string[] {
