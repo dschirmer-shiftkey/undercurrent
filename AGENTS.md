@@ -2,7 +2,7 @@
 
 > This file is auto-generated from the Komatik hub workspace.
 > Source: Komatik/.cursor/rules/KOMATIK-BASE-CAMP-PROMPT.md
-> Last distributed: 2026-04-14
+> Last distributed: 2026-05-08
 > Do not edit the Base Camp sections manually — they will be overwritten on next distribution.
 
 # Working Safely with Base Camp — Autonomous Agent Coordination Protocol
@@ -14,11 +14,11 @@
 
 ## What Is Base Camp?
 
-A team of **17 specialized AI agents** runs **24/7** on a headless Intel NUC (Ubuntu 24.04 LTS),
-autonomously monitoring repositories, creating branches, opening pull requests, merging code,
-running security scans, discovering knowledge, and coordinating through a custom MCP server
-with 40+ RBAC-enforced tools. This system is called **Base Camp** and lives in the
-`komatik-agents` repository (dashboard in `komatik-base-camp`).
+A team of **21 specialized AI agents** runs **24/7** on the **DGX Spark** via OpenClaw,
+autonomously monitoring 15 repositories, creating branches, opening pull requests, merging code,
+running security scans, discovering knowledge, and coordinating through OpenClaw with native
+tools. This system is called **Base Camp** and lives in per-agent workspaces on the Spark
+(dashboard in `komatik-base-camp`). The NUC is retained as backup only (dashboard + database).
 
 **You are the last line of defense.** Agent-authored code flows into `dev` continuously —
 sometimes 13+ PRs in a single day. Before any code reaches `staging` or `master`, it must
@@ -28,75 +28,85 @@ pass through human-supervised review. That review happens in YOUR workspace.
 
 ```
 ┌──────────────────────────────────────────────┐
-│  Base Camp NUC (24/7 Autonomous)               │
-│  17 agents → branches → PRs → dev             │
-│                                                │
-│  GitHub Webhooks (BC6) ─────────────────┐     │
-│  push, PR, CI, issues → events table    │     │
-│  PR opened → auto-review workflow:      │     │
-│    security-qa → api-architect →        │     │
-│    release-mgr                          │     │
-└────────────────────┬────────────────────┘
-                     │  PRs flow continuously
+│  DGX Spark (PRIMARY — 24/7 Autonomous)       │
+│  21 agents → branches → PRs → dev            │
+│  MCP Server (port 3001) + 48 cron jobs       │
+│                                               │
+│  GitHub Webhooks (BC6) ─────────────────┐    │
+│  push, PR, CI, issues → events table    │    │
+│  PR reviews: batch cron (security-qa    │    │
+│  scans, release-mgr merges)             │    │
+├──────────────────────────────────────────┤
+│  NUC (BACKUP — dashboard + database)     │
+│  ← GitHub webhooks (push, PR, CI, issues)│
+│  Dashboard API, PostgreSQL, Grafana      │
+└────────────────────┬─────────────────────┘
+                     │  PRs flow down (may be pre-reviewed)
                      ▼
 ┌──────────────────────────────────────────────┐
 │  YOUR Workspace (Human-Supervised)            │
-│  Review → Approve/Fix → staging → master      │
-│  (Base Camp may have already pre-reviewed the PR) │
+│  Check Base Camp review → Apply 10-point      │
+│  checklist → Approve/Fix → staging → master   │
 └──────────────────────────────────────────────┘
 ```
 
-The NUC agents handle volume. You handle quality gates. Never merge agent code without review.
+The Spark agents handle volume. You handle quality gates. Never merge agent code without review.
 
-**New (BC6)**: When a PR is opened or marked ready-for-review, Base Camp automatically spawns a
-3-step review workflow: **Sentinel** (security-qa) → **Blueprint** (api-architect) →
-**Harbor** (release-mgr). Their findings appear as workflow steps in the events table.
-Check for existing Base Camp review results before duplicating that work.
+**New (BC6)**: GitHub webhooks deliver PR events to the `events` table in real-time.
+PR reviews are handled as **batch cron work** — Sentinel (security-qa) scans PRs during
+its scheduled sessions, logs findings as decisions, and notifies Harbor (release-mgr) who
+makes merge decisions during its own sessions. This is event-driven, not workflow-driven.
 
 ---
 
 ## The Base Camp Agent Team
 
 
-| Codename      | Agent ID          | Role                                                        | Risk Level                    |
-| ------------- | ----------------- | ----------------------------------------------------------- | ----------------------------- |
-| **Koda**      | coordinator       | Chief of Staff — delegation, briefings, strategic oversight | LOW (orchestration only)      |
-| **Relay**     | pipeline-ops      | Prebuild pipeline monitoring, DB health, Edge Functions     | **HIGH** (pipeline + DB)      |
-| **Pixel**     | frontend-dev      | Next.js / React UI across all web applications              | MEDIUM (UI changes)           |
-| **Vault**     | infra-ops         | Supabase, migrations, RLS policies, cron jobs               | **CRITICAL** (schema + infra) |
-| **Sentinel**  | security-qa       | Security audits, vulnerability scanning (has veto power)    | LOW (read-only scanner)       |
-| **Compass**   | product-pm        | Business logic, pricing, economics                          | LOW (advisory)                |
-| **Ledger**    | payments          | Stripe integration, payouts, invoicing                      | **HIGH** (financial code)     |
-| **Weaver**    | prompt-eng        | LLM prompt quality, model routing configuration             | MEDIUM (prompt/config)        |
-| **Harbor**    | release-mgr       | Git operations, PRs, branch management, releases            | MEDIUM (merge authority)      |
-| **Blueprint** | api-architect     | API contracts, cross-service validation (tiebreaker role)   | MEDIUM (contracts)            |
-| **Scribe**    | tech-writer       | Documentation accuracy, README freshness                    | LOW (docs only)               |
-| **Mirror**    | agent-tuner       | Agent performance tuning, prompt refinement                 | LOW (advisory)                |
-| **Tracker**   | knowledge-scout   | Tool discovery, pattern mining, knowledge gaps              | LOW (research)                |
-| **Orbit**     | satellite-watcher | Cross-repo monitoring — issues, CI, PRs across 11+ repos    | LOW (read-only)               |
-| **Edison**    | rd-platform       | R&D platform research                                       | LOW (research)                |
-| **Tesla**     | rd-satellite      | R&D satellite product research                              | LOW (research)                |
-| **Beacon**    | marketing         | Marketing, growth, content, SEO tracking                    | LOW (content)                 |
+| Codename      | Agent ID            | Role                                                        | Risk Level                    |
+| ------------- | ------------------- | ----------------------------------------------------------- | ----------------------------- |
+| **Koda**      | coordinator         | Chief of Staff — delegation, briefings, strategic oversight | LOW (orchestration only)      |
+| **Relay**     | pipeline-ops        | Prebuild pipeline monitoring, DB health, Edge Functions     | **HIGH** (pipeline + DB)      |
+| **Pixel**     | frontend-dev        | Next.js / React UI across all web applications              | MEDIUM (UI changes)           |
+| **Smith**     | backend-dev         | API routes, Edge Functions, Python orchestrators, background jobs | MEDIUM (server-side code) |
+| **Vault**     | infra-ops           | Supabase, migrations, RLS policies, cron jobs               | **CRITICAL** (schema + infra) |
+| **Sentinel**  | security-qa         | Security audits, vulnerability scanning (has veto power)    | LOW (read-only scanner)       |
+| **Compass**   | product-pm          | Business logic, pricing, economics                          | LOW (advisory)                |
+| **Ledger**    | payments            | Stripe integration, payouts, invoicing                      | **HIGH** (financial code)     |
+| **Weaver**    | prompt-eng          | LLM prompt quality, model routing configuration             | MEDIUM (prompt/config)        |
+| **Harbor**    | release-mgr         | Git operations, PRs, branch management, releases            | MEDIUM (merge authority)      |
+| **Blueprint** | api-architect       | API contracts, cross-service validation (tiebreaker role)   | MEDIUM (contracts)            |
+| **Scribe**    | tech-writer         | Documentation accuracy, README freshness                    | LOW (docs only)               |
+| **Mirror**    | agent-tuner         | Agent performance tuning, prompt refinement                 | LOW (advisory)                |
+| **Prism**     | data-analyst        | Cross-cutting data quality, analytics, anomaly detection    | LOW (read-mostly)             |
+| **Tracker**   | knowledge-scout     | Tool discovery, pattern mining, knowledge gaps              | LOW (research)                |
+| **Orbit**     | satellite-watcher   | Cross-repo monitoring — issues, CI, PRs across all 15 repos | LOW (read-only)              |
+| **Edison**    | rd-platform         | R&D platform research                                       | LOW (research)                |
+| **Tesla**     | rd-satellite        | R&D satellite product research                              | LOW (research)                |
+| **Beacon**    | marketing           | Marketing lead — strategy, content calendar, SEO            | LOW (content)                 |
+| **Echo**      | social-distribution | Social media, newsletter, content distribution              | LOW (content)                 |
+| **Herald**    | outreach            | Email campaigns, lead capture, CRM pipeline                 | LOW (content)                 |
 
 
-### Monitored Repositories (11+)
+### Monitored Repositories (15)
 
 The Base Camp agents track these repos. If your workspace touches any of them, Base Camp agents may also
 be creating PRs against it:
 
 - **Komatik** — parent monorepo (Next.js platform, orchestrator, knowledge engine)
-- **komatik-agents** — the agent infrastructure itself
+- **komatik-agents** — agent infrastructure
 - **komatik-base-camp** — Base Camp dashboard
-- **deployguard** — CI/CD deployment gates
-- **daydream-studio** — AI game engine IDE
-- **storyboard-studio** — AI narrative creation IDE
-- **shieldcheck** — Floe: AI code security audits (security scanning arm of the GTM orbit)
-- **reviewflow** — Traverse: AI-augmented code review
-- **mcp-brokerage** — Forge: MCP tool marketplace
-- **rescue-engineering** — Triage: production rescue service (beachhead product)
-- **shadow-ai-governance** — Watchtower: enterprise shadow AI tool monitoring
-- **cognitive-debt** — team health diagnostics
-- **Bored** — infinite canvas desktop OS
+- **deployguard** — Komatik Trailhead: self-healing CI/CD gates
+- **daydream-studio** — Komatik Sundog: AI game engine IDE
+- **storyboard-studio** — Komatik Kindling: AI narrative creation IDE
+- **floe** — Komatik Trace component: AI code security scanning
+- **traverse** — Komatik Trace component: AI-augmented code review
+- **forge** — Komatik Pack: MCP marketplace
+- **triage** — Komatik Trace component: rescue intake + diagnostic scoring
+- **watchtower** — Komatik Trace component: shadow AI governance
+- **Drift** — Komatik Trace component: CRS scan + quiz + insights content pipeline
+- **komatik-vector** — Komatik Vector: AI-operated ATC facility simulation
+- **komatik-yggdrasil** — Komatik Cairn: charitable AI initiative
+- **Bored** — Komatik Lodge: infinite canvas desktop OS
 
 ---
 
@@ -107,13 +117,13 @@ Base Camp agents create branches with these naming patterns. Learn to recognize 
 
 | Pattern                                | Origin                            | Example                                         |
 | -------------------------------------- | --------------------------------- | ----------------------------------------------- |
-| `claude/<two-word-slug>`               | Claude Code session on NUC        | `claude/keen-bell`, `claude/flamboyant-faraday` |
+| `claude/<two-word-slug>`               | Claude Code session on Spark      | `claude/keen-bell`, `claude/flamboyant-faraday` |
 | `agent/<agent-id>/<description>`       | OpenClaw scheduled agent          | `agent/frontend-dev/fix-nav-a11y`               |
-| `cursor/<description>-<4-char-hex>`    | Cursor session on NUC             | `cursor/deployguard-logic-issues-5ef5`          |
+| `cursor/<description>-<4-char-hex>`    | Cursor session on Spark           | `cursor/deployguard-logic-issues-5ef5`          |
 | `cursor/<description>` (no hex suffix) | **Probably YOUR local workspace** | `cursor/promote-dev-to-staging`                 |
 
 
-**Ambiguity warning**: Both local workspaces and the NUC create `cursor/`* branches. To
+**Ambiguity warning**: Both local workspaces and the Spark create `cursor/`* branches. To
 confirm origin, check the commit author:
 
 ```bash
@@ -122,7 +132,7 @@ git log origin/<branch> -1 --format='%an <%ae>'
 
 ---
 
-## The 4 Mandatory Workflows
+## The 5 Mandatory Workflows
 
 ### Workflow 1: Session Start — "What happened while I was away?"
 
@@ -150,7 +160,7 @@ gh pr list --state merged --limit 20 \
 # 5. Check real-time GitHub events from Base Camp (BC6 webhook data)
 CallMcpTool(server="user-komatik-readonly", toolName="query_events", arguments={"limit": 10})
 
-# 6. Check if any NUC agent sent you a message
+# 6. Check if any Spark agent sent you a message
 CallMcpTool(server="user-komatik-readonly", toolName="get_messages", arguments={"agent_id": "cursor-workspace"})
 ```
 
@@ -303,6 +313,26 @@ RPCs have callers, imports resolve, and API response shapes match their consumer
 
 ---
 
+### Workflow 5: Work Completed — "Tell Base Camp what changed"
+
+**Run this after merging a PR, completing a significant fix, or wrapping up a feature.**
+
+GitHub webhooks (BC6) deliver structural signals (files changed, PR merged) but not semantic
+context. Without this notification, Spark agents operate on stale mental models — they may
+duplicate already-completed work, file issues for fixed bugs, or produce reports with
+outdated status.
+
+Use the Base Camp dashboard API to notify the system about completed work:
+
+- **POST `/api/agents/message`** — send a message to the coordinator with what changed
+- **POST `/api/events`** — log significant events
+- **PATCH `/api/tasks`** — update task status
+
+**Skip** only for trivial changes (typo fixes, formatting, single-line config). When in
+doubt, send the notification — over-communicating is better than staleness.
+
+---
+
 ## Trust Levels — What to Scrutinize
 
 ### HIGH TRUST (usually correct, quick review)
@@ -362,15 +392,25 @@ If you discover an agent merged harmful code (destructive SQL, auth bypass, secr
 
 ## Base Camp Infrastructure Reference
 
-These services run on the NUC (accessible via Tailscale VPN at `100.87.31.3`):
+### DGX Spark (PRIMARY — agent execution)
 
+| Service          | Port  | What It Does                                              |
+| ---------------- | ----- | --------------------------------------------------------- |
+| OpenClaw Gateway | 18789 | Agent orchestration engine (all 21 agents)                |
+| MCP Server       | 3001  | Master Control Program for agent tools and coordination   |
+| Agent Crons      | —     | 48 scheduled jobs (heartbeat, sprints, pipeline checks, research sweeps) |
+
+Access: Spark via Tailscale VPN (`100.96.x.x` — check `tailscale status` for current IP).
+
+### NUC (BACKUP — dashboard and database)
+
+These services run on the NUC (accessible via Tailscale VPN at `100.87.31.3`):
 
 | Service              | Port  | Purpose                                         |
 | -------------------- | ----- | ----------------------------------------------- |
-| OpenClaw Gateway     | 18789 | Agent orchestration engine                      |
 | Base Camp Dashboard  | 3100  | Unified command center (agents, CRM, financials, marketing) |
 | Grafana              | 3200  | Time-series metrics and dashboards              |
-| PostgreSQL 16        | 5432  | 25-table structured data store                  |
+| PostgreSQL 16        | 5432  | 44-table structured data store (RLS on all 44)  |
 | ChromaDB             | 8000  | Vector database for semantic code search        |
 | Plausible Analytics  | 8100  | Self-hosted website analytics (SEO, traffic)    |
 | Code Server          | 3300  | VS Code in browser                              |
@@ -390,26 +430,25 @@ table. A polling fallback cron runs every 15 minutes to catch missed events.
 
 ### GitHub Webhook Integration (BC6 — live as of April 12, 2026)
 
-All 11 project repos have registered webhooks delivering these event types in real-time:
+All 15 project repos have registered webhooks delivering these event types in real-time:
 - `push` — branch updates, commits
 - `pull_request` — opened, closed, merged, ready-for-review
 - `check_run` — CI pass/fail
 - `issues` — created, closed, labeled
 
-**Automated PR review pipeline**: When a PR is opened or marked ready-for-review, Base Camp
-spawns a 3-step workflow:
-1. **Sentinel** (security-qa) — security scan
-2. **Blueprint** (api-architect) — API contract validation
-3. **Harbor** (release-mgr) — release readiness check
+**Event-driven PR review**: When PR events arrive, they are stored in the `events` table.
+Sentinel (security-qa) picks up new PRs during its scheduled cron sessions, runs security
+scans, and logs findings as decisions. Harbor (release-mgr) processes merge-readiness during
+its own sessions. This is batch cron processing, not an auto-spawned workflow pipeline.
 
-These review results are visible via `query_events` or the dashboard Activity feed.
+Review results are visible via `query_events` or the dashboard Activity feed.
 
 
 ---
 
 ## Base Camp Agent Scheduling
 
-The agents run on cron schedules. All times are **US Pacific (PT)** — the NUC timezone.
+The agents run on cron schedules. All times are **US Pacific (PT)** — the Spark timezone.
 
 
 | Time (PT) | Agent                     | Activity                                   |
@@ -419,12 +458,12 @@ The agents run on cron schedules. All times are **US Pacific (PT)** — the NUC 
 | 06:00     | Tracker (knowledge-scout) | Research sweep (npm, PyPI, GitHub, MCP)    |
 | 07:00     | Orbit (satellite-watcher) | Cross-repo status check                    |
 | 08:00     | Relay (pipeline-ops)      | Pipeline health check                      |
-| 09:00     | Koda (coordinator)        | **Morning briefing**                       |
+| 10:00     | Koda (coordinator)        | **Morning briefing**                       |
 | 10:00     | Pixel + Blueprint + others| **Dev sprint** (workflow step execution)   |
 | 12:00     | Sentinel (security-qa)    | Security scan                              |
 | 15:00     | Tracker (knowledge-scout) | Afternoon research sweep                   |
 | 17:00     | Orbit (satellite-watcher) | Afternoon repo scan                        |
-| 18:00     | Koda (coordinator)        | **Evening wrap-up**                        |
+| 18:00     | Sentinel (security-qa)    | Responsive security check                  |
 | 22:00     | Pixel (frontend-dev)      | Overnight dependency updates + issue fixes |
 
 
@@ -461,10 +500,18 @@ When your work conflicts with agent-created work:
 | Schema migration from agent     | **ALWAYS full line-by-line review** — never auto-merge       |
 | CI failure in events table      | Check if pipeline-ops is already on it before acting         |
 | Unsure about agent code quality | When in doubt, request changes. Better safe than sorry.      |
-| Found issue during PR review    | `create_task` to put it on the board for a NUC agent to pick up |
+| Found issue during PR review    | `create_task` to put it on the board for a Spark agent to pick up |
 | Need to redirect agent work     | `send_message` to coordinator — reads messages every 4 hours |
 | Made an architectural decision  | `log_decision` to record reasoning in the audit trail        |
+| Merged a PR or completed work   | **Workflow 5**: notify via dashboard API                     |
+| Completed a board task          | `update_task_status` with column `done`                      |
 
+
+---
+
+## Workflow Engine & Suggestion-Only Policy (BC7 → BC7.1)
+
+Agents execute multi-step work via the workflow engine (`create_workflow` → `advance_workflow` → `complete_step`). As of Apr 25, 2026, agents are **suggestion-only**: `git_operations` has been revoked from developer/researcher RBAC roles. Agents propose changes via `write_workspace_file` + `create_task` (assignee: `cursor-workspace`). David reviews and implements.
 
 ---
 
@@ -474,7 +521,7 @@ When your work conflicts with agent-created work:
 
 An MCP server (`komatik-readonly`) connects every Cursor workspace to the NUC's
 PostgreSQL database over Tailscale. It exposes 12 read tools and 5 rate-limited write
-tools. Every write is tagged `cursor-workspace` so NUC agents know it came from you.
+tools. Every write is tagged `cursor-workspace` so Spark agents know it came from you.
 
 **Read tools (query state):**
 
@@ -491,11 +538,11 @@ Available read tools: `get_system_health`, `query_agent_runs`, `query_tasks`, `q
 `get_messages`, `query_sql` (SELECT only), `get_workflow`, `query_deals`, `query_contacts`,
 `query_invoices`, `query_financials`, `list_skill_proposals`.
 
-**Write tools (coordinate with NUC agents):**
+**Write tools (coordinate with Spark agents):**
 
 | Tool | What It Does | Limit/Session |
 | ---- | ------------ | ------------- |
-| `send_message` | Send async message to any NUC agent (delivered at their next cron session) | 10 |
+| `send_message` | Send async message to any Spark agent (delivered at their next cron session) | 10 |
 | `create_task` | Create a task on a project Kanban board (always lands in backlog) | 10 |
 | `update_task_status` | Move a task to a new column (backlog/in-progress/review/done) | 20 |
 | `log_decision` | Record a decision to the audit trail | 20 |
@@ -511,13 +558,13 @@ CallMcpTool(server="user-komatik-readonly", toolName="propose_skill", arguments=
 
 **How to use write tools effectively:**
 
-- **Session start**: In addition to git fetch and `query_events`, check `get_messages(agent_id: "cursor-workspace")` to see if any NUC agent sent you a response.
-- **When you find an issue during review**: `create_task` to put it on the board so a NUC agent picks it up (e.g., missing RLS policy → create a critical task assigned to security-qa).
-- **When you need to redirect agent work**: `send_message` to the coordinator instead of waiting for David. The coordinator reads messages at every heartbeat (every 4 hours).
+- **Session start**: In addition to git fetch and `query_events`, check `get_messages(agent_id: "cursor-workspace")` to see if any Spark agent sent you a response.
+- **When you find an issue during review**: `create_task` to put it on the board so a Spark agent picks it up (e.g., missing RLS policy → create a critical task assigned to security-qa).
+- **When you need to redirect agent work**: `send_message` to the coordinator instead of waiting for David. The coordinator reads its inbox at every heartbeat (~every 3-4 hours).
 - **When you make an architectural decision**: `log_decision` to record the reasoning for the audit trail.
 
 **Real-time GitHub events (BC6)** — the `events` table receives webhook data from all
-11 repos. Query it to see pushes, PRs, CI failures, and issues in real-time:
+15 repos. Query it to see pushes, PRs, CI failures, and issues in real-time:
 
 ```
 CallMcpTool(server="user-komatik-readonly", toolName="query_events", arguments={"limit": 20})
@@ -529,36 +576,32 @@ CallMcpTool(server="user-komatik-readonly", toolName="query_sql", arguments={"sq
 Even with the write bridge, some operations remain restricted:
 
 - Trigger cron jobs or agent sessions
-- Write files to the NUC workspace or repos
-- Create git branches, commits, or PRs on NUC repos
+- Write files to the Spark workspace or repos
+- Create git branches, commits, or PRs on Spark repos
 - Manipulate workflows (create, advance, complete, fail)
 - Reset circuit breakers
 - Create CRM records (deals, contacts, invoices)
 - Approve skill proposals
 - Access **OpenClaw gateway** internals (session scheduling, rate limits, queue depth)
 - View **MCP tool invocation logs** (which tools agents called, RBAC denials)
-- Read **live file contents** on the NUC (use `scripts/sync-to-cursor.sh` from the komatik-agents workspace for file sync)
+- Read **live file contents** on the Spark (use `scripts/sync-to-cursor.sh` from the komatik-agents workspace for file sync)
 
 ### The Rule
 
 **NEVER conclude that Base Camp "hasn't launched" or "isn't operational" based on
 static git analysis alone.** Always query the MCP bridge first. The system is live and
-operational — as of April 12, 2026: 41 agent runs completed (95% success), 9 of 17
-agents active, 34 inter-agent messages, 5 running workflows, 38 tasks on the board.
+operational — as of May 2026: 1,000+ agent runs completed (98%+ success rate), all 21
+agents active on the DGX Spark, 48 cron jobs scheduled, 544+ tasks on the board.
 
 Placeholder files in git (like empty intel reports) do NOT mean the system hasn't run.
 Runtime state lives in PostgreSQL, not in git-committed files.
 
-### Roadmap Status (as of April 12, 2026)
+### Roadmap Status (as of May 2026)
 
-- **BC6 (GitHub Webhook Integration)**: COMPLETED — real-time event delivery from all 11 repos
-- **BC8 (QuickBooks Online OAuth2 flow)**: Active — the only remaining Base Camp goal
-
-### Known Open Issues (as of April 12, 2026)
-
-1. **5 of 6 intel files still placeholders** — only `intel/REPO-STATUS.md` has real data
-   from satellite-watcher. The other 5 (DAILY-INTEL, INCIDENTS, INFRA-HEALTH,
-   PIPELINE-HEALTH, SECURITY-REPORT) are awaiting their first agent-written sweep.
+- **BC6 (GitHub Webhook Integration)**: COMPLETED — real-time event delivery from all 15 repos
+- **BC8 (QuickBooks Online OAuth2 flow)**: Active
+- **GOAL-K3 (CRM Build)**: Active — api-architect owns Phase 1, 4 sequential tasks created
+- **Komatik Launch Readiness**: COMPLETED — OAuth role persistence, Stripe PaymentElement, onboarding guards
 
 ---
 
