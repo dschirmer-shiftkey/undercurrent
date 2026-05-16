@@ -91,7 +91,8 @@ export class DefaultStrategy implements EnrichmentStrategy {
         intent.action === "design" ||
         intent.action === "unknown"
       ) {
-        const hasFileRef = /(?:\w+\.\w{1,5}|\/\w+|line\s+\d+)/i.test(message);
+        const hasFileRef =
+          this.containsLikelyFileReference(message) || this.containsLineReference(message);
         if (!hasFileRef && !fileRefsInContext) {
           gaps.push({
             id: randomUUID(),
@@ -533,8 +534,8 @@ export class DefaultStrategy implements EnrichmentStrategy {
   ): Specificity {
     let score = 0;
 
-    if (/\w+\.\w{1,5}/.test(lower)) score += 2;
-    if (/line\s+\d+/i.test(lower)) score += 3;
+    if (this.containsLikelyFileReference(lower)) score += 2;
+    if (this.containsLineReference(lower)) score += 3;
     if (/function\s+\w+|class\s+\w+|const\s+\w+/i.test(lower)) score += 2;
     if (/`[^`]+`/.test(lower)) score += 1;
     if (words.length > 20) score += 1;
@@ -572,7 +573,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
     if (/\b(process|workflow|how we|meta|tool(ing|s)?)\b/.test(lower)) {
       return "meta";
     }
-    if (/\w+\.\w{1,5}|line\s+\d+/i.test(lower)) {
+    if (this.containsLikelyFileReference(lower) || this.containsLineReference(lower)) {
       return "atomic";
     }
     if (words.length < 15) return "local";
@@ -600,8 +601,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
     const quoted = message.match(/"[^"]+"/g);
     if (quoted) fragments.push(...quoted.map((q) => q.slice(1, -1)));
 
-    const filePaths = message.match(/\b[\w./\\-]+\.\w{1,5}\b/g);
-    if (filePaths) fragments.push(...filePaths);
+    fragments.push(...this.extractFileReferences(message));
 
     const temporalRefs = message.match(
       /\b(last time|same (?:approach|way|thing|method|pattern)|as before|like before|previously|as we discussed|what we discussed|what we talked about|mentioned (?:earlier|before|previously)|as usual|remember when|like we did|like last|we agreed|you (?:said|suggested|recommended))\b/gi,
@@ -665,6 +665,88 @@ export class DefaultStrategy implements EnrichmentStrategy {
       }
     }
     return false;
+  }
+
+  private containsLikelyFileReference(text: string): boolean {
+    return this.extractFileReferences(text).length > 0;
+  }
+
+  private extractFileReferences(text: string): string[] {
+    const refs: string[] = [];
+    const tokens = text.split(/\s+/).map((t) => t.trim());
+    for (const token of tokens) {
+      const candidate = this.trimWrappedToken(token);
+      if (!candidate) continue;
+      if (!candidate.includes(".")) continue;
+      const lastDot = candidate.lastIndexOf(".");
+      if (lastDot <= 0 || lastDot >= candidate.length - 1) continue;
+      const ext = candidate.slice(lastDot + 1);
+      if (ext.length < 1 || ext.length > 5) continue;
+      if (!this.isAlphaNum(ext)) continue;
+      if (!this.isAllowedFileToken(candidate)) continue;
+      refs.push(candidate);
+    }
+    return refs;
+  }
+
+  private containsLineReference(text: string): boolean {
+    const lower = text.toLowerCase();
+    const marker = "line ";
+    let index = lower.indexOf(marker);
+    while (index !== -1) {
+      let i = index + marker.length;
+      let digitCount = 0;
+      while (i < lower.length) {
+        const ch = lower.charAt(i);
+        if (ch < "0" || ch > "9") break;
+        digitCount++;
+        i++;
+      }
+      if (digitCount > 0) return true;
+      index = lower.indexOf(marker, index + marker.length);
+    }
+    return false;
+  }
+
+  private trimWrappedToken(value: string): string {
+    const leading = new Set(["`", "\"", "'", "(", "[", "<", "{"]);
+    const trailing = new Set(["`", "\"", "'", ")", "]", ">", "}", ".", ",", ";", ":", "!", "?"]);
+    let start = 0;
+    let end = value.length;
+    while (start < end && leading.has(value.charAt(start))) start++;
+    while (end > start && trailing.has(value.charAt(end - 1))) end--;
+    return value.slice(start, end);
+  }
+
+  private isAlphaNum(value: string): boolean {
+    if (value.length === 0) return false;
+    for (let i = 0; i < value.length; i++) {
+      const ch = value.charAt(i);
+      if (
+        !((ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9"))
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private isAllowedFileToken(value: string): boolean {
+    if (value.length === 0) return false;
+    for (let i = 0; i < value.length; i++) {
+      const ch = value.charAt(i);
+      const ok =
+        (ch >= "A" && ch <= "Z") ||
+        (ch >= "a" && ch <= "z") ||
+        (ch >= "0" && ch <= "9") ||
+        ch === "_" ||
+        ch === "." ||
+        ch === "/" ||
+        ch === "\\" ||
+        ch === "-";
+      if (!ok) return false;
+    }
+    return true;
   }
 
   /**
