@@ -1,0 +1,39 @@
+name: Trailhead
+
+on:
+  pull_request:
+    branches: [dev]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  security-events: read
+
+concurrency:
+  group: trailhead-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Deployment Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: KomatikAI/trailhead@v3
+        id: gate
+        with:
+          risk-threshold: "80"
+          warn-threshold: "40"
+          add-risk-labels: "true"
+          evaluation-store-url: "https://komatik.ai/api/deployguard/store"
+          evaluation-store-secret: ${{ secrets.INTERNAL_API_SECRET }}
+          dora-metrics: "true"
+          security-gate: "true"
+
+      - name: Print gate results
+        if: always()
+        run: |
+          echo "decision:     ${{ steps.gate.outputs.gate-decision }}"
+          echo "risk-score:   ${{ steps.gate.outputs.risk-score }}"
+          echo "dora-rating:  ${{ steps.gate.outputs.dora-rating }}"
+          echo "rollout:      ${{ steps.gate.outputs.rollout-readiness-json }}"
