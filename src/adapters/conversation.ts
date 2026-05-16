@@ -297,11 +297,11 @@ export class ConversationAdapter implements ContextAdapter {
       .filter((t) => t.length > 0);
     const terms: string[] = [];
     for (const token of tokens) {
-      const normalized = token.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "");
+      const normalized = this.trimToAlnumEdges(token);
       if (!normalized.includes("-") && !normalized.includes("_")) continue;
       const parts = normalized.split(/[-_]/).filter((p) => p.length > 0);
       if (parts.length < 2) continue;
-      if (!parts.every((p) => /^[A-Za-z0-9]+$/.test(p))) continue;
+      if (!parts.every((p) => this.isAlphaNum(p))) continue;
       terms.push(normalized);
     }
     return terms;
@@ -311,7 +311,7 @@ export class ConversationAdapter implements ContextAdapter {
     const tokens = text.split(/\s+/).map((t) => t.trim());
     const paths: string[] = [];
     for (const token of tokens) {
-      const candidate = token.replace(/^[`"'([<{]+|[`"')\]>.,;:!?]+$/g, "");
+      const candidate = this.trimWrappedToken(token);
       if (!candidate) continue;
       if (this.isLikelyFilePath(candidate)) {
         paths.push(candidate);
@@ -331,6 +331,37 @@ export class ConversationAdapter implements ContextAdapter {
     if (dot <= 0 || dot === base.length - 1) return false;
     const ext = base.slice(dot + 1);
     if (ext.length < 1 || ext.length > 6) return false;
-    return /^[A-Za-z0-9]+$/.test(ext);
+    return this.isAlphaNum(ext);
+  }
+
+  private trimToAlnumEdges(value: string): string {
+    let start = 0;
+    let end = value.length;
+    while (start < end && !this.isAlphaNumChar(value.charAt(start))) start++;
+    while (end > start && !this.isAlphaNumChar(value.charAt(end - 1))) end--;
+    return value.slice(start, end);
+  }
+
+  private trimWrappedToken(value: string): string {
+    const leading = new Set(["`", "\"", "'", "(", "[", "<", "{"]);
+    const trailing = new Set(["`", "\"", "'", ")", "]", ">", "}", ".", ",", ";", ":", "!", "?"]);
+    let start = 0;
+    let end = value.length;
+    while (start < end && leading.has(value.charAt(start))) start++;
+    while (end > start && trailing.has(value.charAt(end - 1))) end--;
+    return value.slice(start, end);
+  }
+
+  private isAlphaNum(value: string): boolean {
+    if (value.length === 0) return false;
+    for (let i = 0; i < value.length; i++) {
+      if (!this.isAlphaNumChar(value.charAt(i))) return false;
+    }
+    return true;
+  }
+
+  private isAlphaNumChar(ch: string): boolean {
+    if (ch.length === 0) return false;
+    return (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9");
   }
 }

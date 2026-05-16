@@ -675,15 +675,15 @@ export class DefaultStrategy implements EnrichmentStrategy {
     const refs: string[] = [];
     const tokens = text.split(/\s+/).map((t) => t.trim());
     for (const token of tokens) {
-      const candidate = token.replace(/^[`"'([<{]+|[`"')\]>.,;:!?]+$/g, "");
+      const candidate = this.trimWrappedToken(token);
       if (!candidate) continue;
       if (!candidate.includes(".")) continue;
       const lastDot = candidate.lastIndexOf(".");
       if (lastDot <= 0 || lastDot >= candidate.length - 1) continue;
       const ext = candidate.slice(lastDot + 1);
       if (ext.length < 1 || ext.length > 5) continue;
-      if (!/^[A-Za-z0-9]+$/.test(ext)) continue;
-      if (!/^[A-Za-z0-9_./\\-]+$/.test(candidate)) continue;
+      if (!this.isAlphaNum(ext)) continue;
+      if (!this.isAllowedFileToken(candidate)) continue;
       refs.push(candidate);
     }
     return refs;
@@ -706,6 +706,47 @@ export class DefaultStrategy implements EnrichmentStrategy {
       index = lower.indexOf(marker, index + marker.length);
     }
     return false;
+  }
+
+  private trimWrappedToken(value: string): string {
+    const leading = new Set(["`", "\"", "'", "(", "[", "<", "{"]);
+    const trailing = new Set(["`", "\"", "'", ")", "]", ">", "}", ".", ",", ";", ":", "!", "?"]);
+    let start = 0;
+    let end = value.length;
+    while (start < end && leading.has(value.charAt(start))) start++;
+    while (end > start && trailing.has(value.charAt(end - 1))) end--;
+    return value.slice(start, end);
+  }
+
+  private isAlphaNum(value: string): boolean {
+    if (value.length === 0) return false;
+    for (let i = 0; i < value.length; i++) {
+      const ch = value.charAt(i);
+      if (
+        !((ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9"))
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private isAllowedFileToken(value: string): boolean {
+    if (value.length === 0) return false;
+    for (let i = 0; i < value.length; i++) {
+      const ch = value.charAt(i);
+      const ok =
+        (ch >= "A" && ch <= "Z") ||
+        (ch >= "a" && ch <= "z") ||
+        (ch >= "0" && ch <= "9") ||
+        ch === "_" ||
+        ch === "." ||
+        ch === "/" ||
+        ch === "\\" ||
+        ch === "-";
+      if (!ok) return false;
+    }
+    return true;
   }
 
   /**
