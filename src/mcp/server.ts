@@ -12,20 +12,12 @@ import { KomatikPreferenceAdapter } from "../komatik/preference-adapter.js";
 import { KomatikOutcomeAdapter } from "../komatik/outcome-adapter.js";
 import { KomatikMemoryAdapter } from "../komatik/memory-adapter.js";
 import type { KomatikDataClient, KomatikWriteClient } from "../komatik/client.js";
-import type {
-  ContextLayer,
-  ConversationTurn,
-  GovernancePreset,
-  MemoryGovernancePolicy,
-  TargetPlatform,
-} from "../types.js";
+import type { ContextLayer, ConversationTurn, TargetPlatform } from "../types.js";
 
 export interface McpServerConfig {
   client: KomatikDataClient;
   userId: string;
   writeClient?: KomatikWriteClient;
-  preset?: GovernancePreset;
-  governance?: Partial<MemoryGovernancePolicy>;
 }
 
 /**
@@ -33,7 +25,7 @@ export interface McpServerConfig {
  * and Komatik user context to external tools via the MCP protocol.
  */
 export function createUndercurrentMcpServer(config: McpServerConfig): McpServer {
-  const { client, userId, writeClient, preset, governance } = config;
+  const { client, userId, writeClient } = config;
 
   const adapterOptions = { client, userId };
 
@@ -57,9 +49,6 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
     ],
     strategy: new DefaultStrategy(),
     targetPlatform: "mcp",
-    preset: preset ?? "balanced",
-    governance,
-    observability: { includeTrace: true, maxTraceEvents: 64 },
     suggestions: {
       enabled: true,
       writer: writeClient,
@@ -127,10 +116,6 @@ function registerTools(
           .enum(["cursor", "claude", "chatgpt", "api", "mcp", "generic"])
           .optional()
           .describe("Target platform for output formatting (defaults to mcp)"),
-        preset: z
-          .enum(["strict-governance", "balanced", "speed-first"])
-          .optional()
-          .describe("Optional governance preset override for this call."),
       },
     },
     async (args) => {
@@ -144,7 +129,6 @@ function registerTools(
         conversation,
         enrichmentContext: { source: "mcp-external" },
         targetPlatform: (args.platform as TargetPlatform | undefined) ?? "mcp",
-        preset: args.preset as GovernancePreset | undefined,
       });
 
       return {

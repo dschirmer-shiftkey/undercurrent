@@ -29,17 +29,6 @@ interface AggregateStats {
   totalGaps: number;
   totalAssumptions: number;
   totalClarifications: number;
-  totalOriginalTokens: number;
-  totalEnrichedTokens: number;
-  totalContextTokens: number;
-  avgTokenOverhead: number;
-  avgTokenMultiplier: number;
-  governanceInterventions: number;
-  governanceBlockedAssumptions: number;
-  governanceFilteredContextLayers: number;
-  assumptionsBeforeGovernance: number;
-  assumptionsAfterGovernance: number;
-  avgTraceEvents: number;
   domainHintCounts: Record<string, number>;
   actionCounts: Record<string, number>;
   gapDescriptions: Record<string, number>;
@@ -95,17 +84,6 @@ function computeStats(reports: TranscriptReport[]): AggregateStats {
     totalGaps: 0,
     totalAssumptions: 0,
     totalClarifications: 0,
-    totalOriginalTokens: 0,
-    totalEnrichedTokens: 0,
-    totalContextTokens: 0,
-    avgTokenOverhead: 0,
-    avgTokenMultiplier: 1,
-    governanceInterventions: 0,
-    governanceBlockedAssumptions: 0,
-    governanceFilteredContextLayers: 0,
-    assumptionsBeforeGovernance: 0,
-    assumptionsAfterGovernance: 0,
-    avgTraceEvents: 0,
     domainHintCounts: {},
     actionCounts: {},
     gapDescriptions: {},
@@ -127,28 +105,6 @@ function computeStats(reports: TranscriptReport[]): AggregateStats {
       stats.totalGaps += result.gaps.length;
       stats.totalAssumptions += result.assumptions.length;
       stats.totalClarifications += result.clarifications.length;
-      stats.avgTraceEvents += result.metadata.trace?.events.length ?? 0;
-
-      if (result.metadata.tokens) {
-        stats.totalOriginalTokens += result.metadata.tokens.originalMessage;
-        stats.totalEnrichedTokens += result.metadata.tokens.enrichedMessage;
-        stats.totalContextTokens += result.metadata.tokens.context;
-      }
-
-      if (result.metadata.governance) {
-        const gov = result.metadata.governance;
-        stats.governanceInterventions += gov.interventions.length;
-        stats.assumptionsBeforeGovernance += gov.assumptionsBefore;
-        stats.assumptionsAfterGovernance += gov.assumptionsAfter;
-        for (const intervention of gov.interventions) {
-          if (intervention.type === "assumption-blocked") {
-            stats.governanceBlockedAssumptions++;
-          }
-          if (intervention.type === "context-filtered") {
-            stats.governanceFilteredContextLayers++;
-          }
-        }
-      }
 
       const action = result.intent.action;
       stats.actionCounts[action] = (stats.actionCounts[action] ?? 0) + 1;
@@ -166,15 +122,6 @@ function computeStats(reports: TranscriptReport[]): AggregateStats {
 
   stats.avgContextLayers = stats.totalMessages > 0 ? totalCtx / stats.totalMessages : 0;
   stats.avgProcessingMs = stats.totalMessages > 0 ? totalMs / stats.totalMessages : 0;
-  stats.avgTokenOverhead =
-    stats.totalMessages > 0
-      ? (stats.totalEnrichedTokens - stats.totalOriginalTokens) / stats.totalMessages
-      : 0;
-  stats.avgTokenMultiplier =
-    stats.totalOriginalTokens > 0
-      ? stats.totalEnrichedTokens / stats.totalOriginalTokens
-      : 1;
-  stats.avgTraceEvents = stats.totalMessages > 0 ? stats.avgTraceEvents / stats.totalMessages : 0;
 
   return stats;
 }
@@ -218,25 +165,6 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
   console.log(`  Total messages: ${BOLD}${stats.totalMessages}${RESET}`);
   console.log(`  Avg processing: ${BOLD}${stats.avgProcessingMs.toFixed(1)}ms${RESET}`);
   console.log(`  Avg context layers: ${BOLD}${stats.avgContextLayers.toFixed(1)}${RESET}`);
-  console.log(
-    `  Avg token overhead: ${BOLD}${stats.avgTokenOverhead.toFixed(1)}${RESET} tokens/message`,
-  );
-  console.log(`  Token multiplier: ${BOLD}${stats.avgTokenMultiplier.toFixed(2)}x${RESET}`);
-  console.log(`  Avg trace events: ${BOLD}${stats.avgTraceEvents.toFixed(1)}${RESET}`);
-  console.log("");
-
-  console.log(`  ${BOLD}Governance baseline comparison:${RESET}`);
-  const reduced = stats.assumptionsBeforeGovernance - stats.assumptionsAfterGovernance;
-  const reductionPct =
-    stats.assumptionsBeforeGovernance > 0
-      ? ((reduced / stats.assumptionsBeforeGovernance) * 100).toFixed(0)
-      : "0";
-  console.log(
-    `    assumptions: ${stats.assumptionsBeforeGovernance} -> ${stats.assumptionsAfterGovernance} (${reductionPct}% stricter)`,
-  );
-  console.log(`    interventions: ${stats.governanceInterventions}`);
-  console.log(`    blocked assumptions: ${stats.governanceBlockedAssumptions}`);
-  console.log(`    filtered stale context layers: ${stats.governanceFilteredContextLayers}`);
   console.log("");
 
   // Depth distribution

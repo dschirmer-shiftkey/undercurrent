@@ -140,45 +140,6 @@ export function formatResult(result: EnrichedPrompt, verbose: boolean): string {
 
   // Metadata
   lines.push("");
-  if (result.metadata.governance) {
-    const gov = result.metadata.governance;
-    lines.push(c(BOLD + YELLOW, "▸ Governance"));
-    lines.push(
-      `  Preset: ${c(BOLD, gov.preset)} | Context: ${gov.contextLayersBefore} → ${gov.contextLayersAfter} | ` +
-        `Assumptions: ${gov.assumptionsBefore} → ${gov.assumptionsAfter}`,
-    );
-    if (gov.interventions.length > 0) {
-      for (const intervention of gov.interventions.slice(0, 6)) {
-        const color = intervention.severity === "warn" ? RED : DIM;
-        lines.push(
-          `    ${c(color, intervention.type)}: ${intervention.reason}` +
-            (intervention.targetId ? c(DIM, ` [${intervention.targetId}]`) : ""),
-        );
-      }
-      if (gov.interventions.length > 6) {
-        lines.push(c(DIM, `    ... ${gov.interventions.length - 6} more interventions`));
-      }
-    }
-    lines.push("");
-  }
-  if (result.metadata.trace) {
-    lines.push(c(BOLD + YELLOW, "▸ Trace"));
-    lines.push(
-      `  events: ${c(BOLD, String(result.metadata.trace.events.length))}` +
-        (result.metadata.trace.sessionId
-          ? ` | session: ${c(DIM, result.metadata.trace.sessionId)}`
-          : ""),
-    );
-    if (verbose) {
-      for (const event of result.metadata.trace.events.slice(0, 10)) {
-        lines.push(`    [${event.stage}] ${event.event} — ${event.detail}`);
-      }
-      if (result.metadata.trace.events.length > 10) {
-        lines.push(c(DIM, `    ... ${result.metadata.trace.events.length - 10} more events`));
-      }
-    }
-    lines.push("");
-  }
   lines.push(
     c(
       DIM,
