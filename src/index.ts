@@ -7,6 +7,8 @@ import type {
   ContextAdapter,
   EnrichedPrompt,
   EnrichmentStrategy,
+  GovernancePreset,
+  MemoryGovernancePolicy,
   PipelineHooks,
   ProcessResult,
   SessionHealth,
@@ -15,6 +17,52 @@ import type {
   SuggestionResult,
   UndercurrentConfig,
 } from "./types.js";
+
+export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovernancePolicy>> = {
+  "strict-governance": {
+    preset: "strict-governance",
+    maxContextAgeMs: 24 * 60 * 60 * 1000,
+    criticalAssumptionMinConfidence: 0.8,
+    assumptionMinConfidence: 0.72,
+    blockLowConfidenceAssumptions: true,
+    dropStaleContext: true,
+    maxAssumptionsPerMessage: 2,
+  },
+  balanced: {
+    preset: "balanced",
+    maxContextAgeMs: 72 * 60 * 60 * 1000,
+    criticalAssumptionMinConfidence: 0.7,
+    assumptionMinConfidence: 0.62,
+    blockLowConfidenceAssumptions: true,
+    dropStaleContext: true,
+    maxAssumptionsPerMessage: 3,
+  },
+  "speed-first": {
+    preset: "speed-first",
+    maxContextAgeMs: 7 * 24 * 60 * 60 * 1000,
+    criticalAssumptionMinConfidence: 0.6,
+    assumptionMinConfidence: 0.5,
+    blockLowConfidenceAssumptions: false,
+    dropStaleContext: false,
+    maxAssumptionsPerMessage: 5,
+  },
+};
+
+export function withPreset(
+  config: UndercurrentConfig,
+  preset: GovernancePreset,
+  governanceOverrides?: Partial<MemoryGovernancePolicy>,
+): UndercurrentConfig {
+  return {
+    ...config,
+    preset,
+    governance: {
+      ...UNDERCURRENT_PRESETS[preset],
+      ...(config.governance ?? {}),
+      ...(governanceOverrides ?? {}),
+    },
+  };
+}
 
 export class Undercurrent {
   private readonly pipeline: Pipeline;
@@ -102,6 +150,9 @@ export type {
   EnrichmentStrategy,
   FollowupCategory,
   FollowupSuggestion,
+  GovernanceIntervention,
+  GovernancePreset,
+  GovernanceSummary,
   Gap,
   GapResolution,
   HandoffArtifact,
@@ -129,6 +180,11 @@ export type {
   SuggestionInput,
   SuggestionResult,
   SuggestionsConfig,
+  MemoryGovernancePolicy,
+  EnrichmentTrace,
+  EnrichmentTraceEvent,
+  TraceStage,
+  ObservabilityConfig,
   TaskDomain,
   TargetPlatform,
   UndercurrentConfig,

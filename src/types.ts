@@ -63,6 +63,15 @@ export interface Assumption {
   confidence: number;
   source: string;
   correctable: boolean;
+  provenance?: AssumptionProvenance;
+}
+
+export interface AssumptionProvenance {
+  contextSources: string[];
+  contextLayerCount: number;
+  resolutionType: "inferred" | "direct" | "fallback";
+  generatedAt: number;
+  staleSources?: string[];
 }
 
 // ─── Clarifications ─────────────────────────────────────────────────────────
@@ -135,6 +144,8 @@ export interface EnrichmentMetadata {
   tokens?: TokenAccounting;
   /** Wave-meter-style readout of session token pressure. Present only when sessionMonitor is configured. */
   budget?: BudgetMeter;
+  governance?: GovernanceSummary;
+  trace?: EnrichmentTrace;
 }
 
 /**
@@ -172,11 +183,66 @@ export interface TokenAccounting {
   overhead: number;
 }
 
+export interface GovernanceIntervention {
+  type: "context-filtered" | "assumption-blocked" | "assumption-trimmed";
+  reason: string;
+  targetId?: string;
+  severity: "info" | "warn";
+}
+
+export interface GovernanceSummary {
+  preset: GovernancePreset;
+  contextLayersBefore: number;
+  contextLayersAfter: number;
+  assumptionsBefore: number;
+  assumptionsAfter: number;
+  interventions: GovernanceIntervention[];
+}
+
+export type TraceStage =
+  | "classify"
+  | "gather"
+  | "govern"
+  | "analyze"
+  | "compose"
+  | "finalize";
+
+export interface EnrichmentTraceEvent {
+  at: number;
+  stage: TraceStage;
+  event: string;
+  detail: string;
+  metrics?: Record<string, number>;
+  meta?: Record<string, unknown>;
+}
+
+export interface EnrichmentTrace {
+  sessionId?: string;
+  events: EnrichmentTraceEvent[];
+}
+
 // ─── Platform Targeting ─────────────────────────────────────────────────────
 // Undercurrent tailors its enriched output to the target platform. Each
 // platform consumes context differently and benefits from different formats.
 
 export type TargetPlatform = "cursor" | "claude" | "chatgpt" | "api" | "mcp" | "generic";
+
+export type GovernancePreset = "strict-governance" | "balanced" | "speed-first";
+
+export interface MemoryGovernancePolicy {
+  preset: GovernancePreset;
+  maxContextAgeMs: number;
+  criticalAssumptionMinConfidence: number;
+  assumptionMinConfidence: number;
+  blockLowConfidenceAssumptions: boolean;
+  dropStaleContext: boolean;
+  maxAssumptionsPerMessage: number;
+}
+
+export interface ObservabilityConfig {
+  includeTrace?: boolean;
+  maxTraceEvents?: number;
+}
 
 // ─── Pipeline Configuration ─────────────────────────────────────────────────
 
@@ -187,6 +253,9 @@ export interface UndercurrentConfig {
   assumptionConfidenceThreshold?: number;
   timeoutMs?: number;
   targetPlatform?: TargetPlatform;
+  preset?: GovernancePreset;
+  governance?: Partial<MemoryGovernancePolicy>;
+  observability?: ObservabilityConfig;
   onEnrichment?: (result: EnrichedPrompt) => void;
   debug?: boolean;
   sessionMonitor?: SessionMonitorConfig;
@@ -264,6 +333,7 @@ export interface PipelineHooks {
     intent: IntentSignal;
     context: ContextLayer[];
   }) => void;
+  afterGovernance?: (summary: GovernanceSummary) => void;
   afterCompose?: (enriched: EnrichedPrompt) => void;
 }
 
@@ -332,6 +402,10 @@ export interface SessionSnapshot {
   state: SessionState;
   compaction: CompactionResult | null;
   handoff: HandoffArtifact | null;
+  governance?: {
+    preset?: GovernancePreset;
+    interventions?: number;
+  };
 }
 
 export interface SessionWriter {
