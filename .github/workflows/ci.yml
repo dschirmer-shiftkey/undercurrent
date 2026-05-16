@@ -42,5 +42,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Reliability eval gate
+        if: matrix.node-version == 20
+        run: npm run eval:reliability
+
       - name: Verify package
         run: npm pack --dry-run

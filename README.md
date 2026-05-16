@@ -249,6 +249,56 @@ npm run replay -- path/to/transcript.jsonl --verbose
 
 These outputs are intended to provide an ROI loop before changing pricing/packaging: prove quality-per-token and reliability gains first, then optimize rollout strategy.
 
+## Production pilot integration (`process`)
+
+For a real Komatik app path (Forge/Triage/Floe), use `KomatikPilotProcessor` to wrap `Undercurrent.process()` and emit ROI telemetry per request:
+
+```ts
+import { Undercurrent } from "@komatik/slipstream";
+import { KomatikPilotProcessor } from "@komatik/slipstream/komatik";
+
+const uc = new Undercurrent(configWithModelRouter);
+const pilot = new KomatikPilotProcessor(uc, {
+  onProcessTelemetry: (event) => console.log("process telemetry", event),
+  onOutcome: (event) => console.log("accept/reject", event),
+});
+
+const result = await pilot.process(
+  { message: "fix auth flow", conversation },
+  { sourceApp: "forge", userId: "user-123", sessionId: "sess-abc" },
+);
+
+// Later, once user accepts/rejects
+await pilot.recordOutcome({ requestId: result.pilotTelemetry.requestId, accepted: true });
+console.log(pilot.summarizeRoi());
+```
+
+Telemetry includes:
+- end-to-end latency (`totalLatencyMs`) and split (`enrichmentLatencyMs`, `modelLatencyMs`)
+- token efficiency (`tokenMultiplier`, `tokenOverhead`)
+- governance effect (`governanceInterventions`, `blockedAssumptions`)
+- acceptance rate via `recordOutcome()` + `summarizeRoi()`
+
+## CI reliability eval gate
+
+Slipstream ships a replay-based reliability gate that can block merges on regressions:
+- baseline depth-distribution drift
+- token-multiplier ceiling
+- governance intervention bounds
+- blocked-assumption rate ceiling
+
+Run locally:
+
+```bash
+npm run eval:reliability
+```
+
+Refresh baseline intentionally (after approved behavior changes):
+
+```bash
+npm run eval:reliability -- --write-baseline
+```
+
 ### Platform-Aware Composition
 
 Undercurrent formats enriched output differently per target platform via the `targetPlatform` option:

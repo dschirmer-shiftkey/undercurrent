@@ -131,6 +131,7 @@ export { Checkpointer } from "./engine/checkpointer.js";
 export { ModelRouter, TaskDomainClassifier, ModelScorer } from "./engine/model-router.js";
 export { Suggester } from "./engine/suggester.js";
 export { analyzeResponse } from "./engine/response-signals.js";
+export { KomatikPilotProcessor } from "./komatik/pilot.js";
 
 export type {
   Action,
@@ -189,3 +190,13 @@ export type {
   TargetPlatform,
   UndercurrentConfig,
 } from "./types.js";
+
+export type {
+  PilotProcessResult,
+  PilotProcessTelemetry,
+  PilotOutcome,
+  PilotRequestContext,
+  PilotRoiSummary,
+  PilotTelemetrySink,
+  ProcessInvoker,
+} from "./komatik/pilot.js";
