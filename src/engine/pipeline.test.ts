@@ -2,9 +2,14 @@ import { describe, it, expect, vi } from "vitest";
 import { Pipeline } from "./pipeline.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import type {
+  Clarification,
   ContextAdapter,
   ContextLayer,
   EnrichedPrompt,
+  EnrichmentStrategy,
+  Gap,
+  GapResolution,
+  IntentSignal,
   UndercurrentConfig,
 } from "../types.js";
 
@@ -419,6 +424,122 @@ describe("Pipeline", () => {
       expect(result.metadata.enrichmentDepth).toBe("none");
       expect(result.metadata.budget).toBeDefined();
       expect(result.metadata.budget!.pressure).toBe("low");
+    });
+  });
+
+  describe("governance and trace", () => {
+    function createAssumptionStrategy(confidence: number): EnrichmentStrategy {
+      const intent: IntentSignal = {
+        action: "fix",
+        specificity: "low",
+        scope: "cross-system",
+        emotionalLoad: "uncertain",
+        confidence: 0.5,
+        rawFragments: ["auth", "broken"],
+        domainHints: ["auth"],
+      };
+      return {
+        name: "assumption-test-strategy",
+        async classifyIntent() {
+          return intent;
+        },
+        async analyzeGaps(): Promise<Gap[]> {
+          return [
+            {
+              id: "gap-1",
+              description: "Need the intended auth provider",
+              critical: true,
+              resolution: null,
+            },
+          ];
+        },
+        async resolveGap(gap): Promise<GapResolution> {
+          return {
+            type: "assumed",
+            assumption: {
+              id: `asm-${gap.id}`,
+              claim: "Provider is likely OAuth",
+              basis: "Auth domain hint",
+              confidence,
+              source: "heuristic",
+              correctable: true,
+            },
+          };
+        },
+        async compose(message, _intent, _context, _assumptions, _resolvedGaps): Promise<string> {
+          return `enriched:${message}`;
+        },
+      };
+    }
+
+    it("filters stale context in strict-governance preset", async () => {
+      const oldLayer: ContextLayer = {
+        source: "old-adapter",
+        priority: 1,
+        timestamp: Date.now() - 3 * 24 * 60 * 60 * 1000,
+        data: { stale: true },
+        summary: "stale context",
+      };
+      const freshLayer: ContextLayer = {
+        source: "fresh-adapter",
+        priority: 1,
+        timestamp: Date.now(),
+        data: { fresh: true },
+        summary: "fresh context",
+      };
+      const oldAdapter = stubAdapter("old-adapter", [oldLayer]);
+      const freshAdapter = stubAdapter("fresh-adapter", [freshLayer]);
+      const pipeline = new Pipeline(
+        makeConfig({
+          adapters: [oldAdapter, freshAdapter],
+          strategy: createAssumptionStrategy(0.9),
+          preset: "strict-governance",
+        }),
+      );
+
+      const result = await pipeline.enrich({ message: "auth broke", preset: "strict-governance" });
+      const sources = result.context.map((c) => c.source);
+
+      expect(sources).toContain("fresh-adapter");
+      expect(sources).not.toContain("old-adapter");
+      expect(result.metadata.governance?.interventions.some((i) => i.type === "context-filtered")).toBe(
+        true,
+      );
+    });
+
+    it("blocks low-confidence critical assumptions in strict-governance", async () => {
+      const pipeline = new Pipeline(
+        makeConfig({
+          adapters: [],
+          strategy: createAssumptionStrategy(0.55),
+          preset: "strict-governance",
+        }),
+      );
+
+      const result = await pipeline.enrich({ message: "auth broke badly", preset: "strict-governance" });
+
+      expect(result.assumptions.length).toBe(0);
+      expect(result.clarifications.length).toBeGreaterThan(0);
+      expect(
+        result.metadata.governance?.interventions.some((i) => i.type === "assumption-blocked"),
+      ).toBe(true);
+    });
+
+    it("includes trace metadata when observability is enabled", async () => {
+      const pipeline = new Pipeline(
+        makeConfig({
+          adapters: [],
+          strategy: createAssumptionStrategy(0.9),
+          observability: { includeTrace: true, maxTraceEvents: 64 },
+        }),
+      );
+
+      const result = await pipeline.enrich({ message: "debug auth path" });
+
+      expect(result.metadata.trace).toBeDefined();
+      expect((result.metadata.trace?.events.length ?? 0) > 0).toBe(true);
+      expect(result.metadata.trace?.events.some((e) => e.stage === "classify")).toBe(true);
+      expect(result.metadata.trace?.events.some((e) => e.stage === "finalize")).toBe(true);
     });
   });
 });
