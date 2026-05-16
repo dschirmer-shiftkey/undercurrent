@@ -11,12 +11,15 @@ import { KomatikMarketplaceAdapter } from "../komatik/marketplace-adapter.js";
 import { KomatikPreferenceAdapter } from "../komatik/preference-adapter.js";
 import { KomatikOutcomeAdapter } from "../komatik/outcome-adapter.js";
 import { KomatikMemoryAdapter } from "../komatik/memory-adapter.js";
+import { KomatikPilotProcessor } from "../komatik/pilot.js";
 import type { KomatikDataClient, KomatikWriteClient } from "../komatik/client.js";
 import type {
   ContextLayer,
   ConversationTurn,
   GovernancePreset,
   MemoryGovernancePolicy,
+  ModelCallerFn,
+  ModelProvider,
   TargetPlatform,
 } from "../types.js";
 
@@ -26,6 +29,10 @@ export interface McpServerConfig {
   writeClient?: KomatikWriteClient;
   preset?: GovernancePreset;
   governance?: Partial<MemoryGovernancePolicy>;
+  pilot?: {
+    caller: ModelCallerFn;
+    defaultProvider?: ModelProvider;
+  };
 }
 
 /**
@@ -33,7 +40,7 @@ export interface McpServerConfig {
  * and Komatik user context to external tools via the MCP protocol.
  */
 export function createUndercurrentMcpServer(config: McpServerConfig): McpServer {
-  const { client, userId, writeClient, preset, governance } = config;
+  const { client, userId, writeClient, preset, governance, pilot } = config;
 
   const adapterOptions = { client, userId };
 
@@ -60,19 +67,29 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
     preset: preset ?? "balanced",
     governance,
     observability: { includeTrace: true, maxTraceEvents: 64 },
+    modelRouter: pilot
+      ? {
+          enabled: true,
+          caller: pilot.caller,
+          userId,
+          client,
+          defaultProvider: pilot.defaultProvider,
+        }
+      : undefined,
     suggestions: {
       enabled: true,
       writer: writeClient,
       userId,
     },
   });
+  const pilotProcessor = pilot ? new KomatikPilotProcessor(undercurrent) : null;
 
   const server = new McpServer(
     { name: "undercurrent", version: "0.4.0" },
     { capabilities: { logging: {} } },
   );
 
-  registerTools(server, undercurrent, userId, writeClient);
+  registerTools(server, undercurrent, userId, writeClient, pilotProcessor);
   registerResources(
     server,
     identityAdapter,
@@ -102,6 +119,7 @@ function registerTools(
   undercurrent: Undercurrent,
   userId: string,
   writeClient?: KomatikWriteClient,
+  pilotProcessor?: KomatikPilotProcessor | null,
 ): void {
   server.registerTool(
     "enrich",
@@ -332,6 +350,136 @@ function registerTools(
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }],
       };
+    },
+  );
+
+  server.registerTool(
+    "process_with_pilot",
+    {
+      title: "Process Message with Pilot Telemetry",
+      description:
+        "Runs full Undercurrent.process() (enrich + model router + caller) and emits " +
+        "request-level ROI telemetry for production pilot rollouts.",
+      inputSchema: {
+        message: z.string().describe("The raw user message to process"),
+        conversation: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant", "system"]),
+              content: z.string(),
+            }),
+          )
+          .optional()
+          .describe("Prior conversation turns for context"),
+        sourceApp: z
+          .string()
+          .optional()
+          .describe("Source app identifier (forge, triage, floe, platform, etc)"),
+        sessionId: z.string().optional(),
+        requestId: z.string().optional(),
+        platform: z
+          .enum(["cursor", "claude", "chatgpt", "api", "mcp", "generic"])
+          .optional()
+          .describe("Target platform for output formatting (defaults to mcp)"),
+        preset: z
+          .enum(["strict-governance", "balanced", "speed-first"])
+          .optional()
+          .describe("Optional governance preset override for this call."),
+      },
+    },
+    async (args) => {
+      if (!pilotProcessor) {
+        return mcpResult({
+          ok: false,
+          error:
+            "pilot_not_configured: createUndercurrentMcpServer requires config.pilot.caller for process_with_pilot.",
+        });
+      }
+
+      const conversation: ConversationTurn[] | undefined = args.conversation?.map((t) => ({
+        role: t.role,
+        content: t.content,
+      }));
+
+      const result = await pilotProcessor.process(
+        {
+          message: args.message,
+          conversation,
+          enrichmentContext: { source: "mcp-process-pilot" },
+          targetPlatform: (args.platform as TargetPlatform | undefined) ?? "mcp",
+          preset: args.preset as GovernancePreset | undefined,
+        },
+        {
+          sourceApp: args.sourceApp ?? "mcp",
+          userId,
+          sessionId: args.sessionId,
+          requestId: args.requestId,
+        },
+      );
+
+      return mcpResult({
+        ok: true,
+        requestId: result.pilotTelemetry.requestId,
+        modelRecommendation: result.modelRecommendation,
+        modelResponse: result.modelResponse,
+        enrichedPrompt: {
+          enrichedMessage: result.enrichedPrompt.enrichedMessage,
+          intent: result.enrichedPrompt.intent,
+          metadata: result.enrichedPrompt.metadata,
+        },
+        pilotTelemetry: result.pilotTelemetry,
+      });
+    },
+  );
+
+  server.registerTool(
+    "record_pilot_outcome",
+    {
+      title: "Record Pilot Outcome",
+      description:
+        "Records whether the processed result was accepted/rejected for pilot ROI summary.",
+      inputSchema: {
+        requestId: z.string().describe("Request id returned from process_with_pilot"),
+        accepted: z.boolean().describe("Whether user accepted the result"),
+        reason: z.string().optional().describe("Optional reason for accept/reject"),
+      },
+    },
+    async (args) => {
+      if (!pilotProcessor) {
+        return mcpResult({
+          ok: false,
+          error:
+            "pilot_not_configured: createUndercurrentMcpServer requires config.pilot.caller for record_pilot_outcome.",
+        });
+      }
+      await pilotProcessor.recordOutcome({
+        requestId: args.requestId,
+        accepted: args.accepted,
+        reason: args.reason,
+      });
+      return mcpResult({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "get_pilot_roi_summary",
+    {
+      title: "Get Pilot ROI Summary",
+      description:
+        "Returns in-memory ROI summary for the active MCP server session (acceptance, latency, token efficiency).",
+    },
+    async () => {
+      if (!pilotProcessor) {
+        return mcpResult({
+          ok: false,
+          error:
+            "pilot_not_configured: createUndercurrentMcpServer requires config.pilot.caller for get_pilot_roi_summary.",
+        });
+      }
+      return mcpResult({
+        ok: true,
+        summary: pilotProcessor.summarizeRoi(),
+      });
     },
   );
 
