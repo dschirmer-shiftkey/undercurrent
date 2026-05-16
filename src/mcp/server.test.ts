@@ -529,6 +529,62 @@ describe("digest_tool_result tool", () => {
   });
 });
 
+describe("pilot tools", () => {
+  it("process_with_pilot returns not-configured error when no pilot caller exists", async () => {
+    const server = createUndercurrentMcpServer(buildMockConfig());
+    const tool = getInternals(server)._registeredTools["process_with_pilot"]!;
+
+    const result = await tool.handler({ message: "fix auth" }, EXTRA);
+    const parsed = parseToolPayload(result);
+    expect(parsed.ok).toBe(false);
+    expect(String(parsed.error)).toContain("pilot_not_configured");
+  });
+
+  it("runs process_with_pilot and records ROI when pilot caller configured", async () => {
+    const server = createUndercurrentMcpServer({
+      ...buildMockConfig(),
+      pilot: {
+        caller: async ({ model, provider }) => ({
+          content: "model-output",
+          model,
+          provider,
+          inputTokens: 120,
+          outputTokens: 44,
+          latencyMs: 130,
+        }),
+      },
+    });
+    const processTool = getInternals(server)._registeredTools["process_with_pilot"]!;
+    const outcomeTool = getInternals(server)._registeredTools["record_pilot_outcome"]!;
+    const summaryTool = getInternals(server)._registeredTools["get_pilot_roi_summary"]!;
+
+    const processResult = await processTool.handler(
+      {
+        message: "fix auth crash in login.ts",
+        sourceApp: "forge",
+        requestId: "pilot-req-1",
+      },
+      EXTRA,
+    );
+    const parsedProcess = parseToolPayload(processResult);
+    expect(parsedProcess.ok).toBe(true);
+    expect(parsedProcess.requestId).toBe("pilot-req-1");
+    expect(parsedProcess.pilotTelemetry).toBeDefined();
+
+    await outcomeTool.handler(
+      { requestId: "pilot-req-1", accepted: true, reason: "works well" },
+      EXTRA,
+    );
+    const summary = await summaryTool.handler({}, EXTRA);
+    const parsedSummary = parseToolPayload(summary);
+    const roi = parsedSummary.summary as Record<string, unknown>;
+    expect(parsedSummary.ok).toBe(true);
+    expect(roi.totalRequests).toBe(1);
+    expect(roi.acceptedCount).toBe(1);
+    expect(Number(roi.acceptanceRate)).toBe(1);
+  });
+});
+
 describe("resources", () => {
   it("registers 7 resources", () => {
     const server = createUndercurrentMcpServer(buildMockConfig());
