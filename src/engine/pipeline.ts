@@ -1,16 +1,22 @@
 import type {
   AdapterResult,
   Assumption,
+  AssumptionProvenance,
   BudgetMeter,
   ContextAdapter,
   ContextLayer,
   ConversationTurn,
   EnrichedPrompt,
+  EnrichmentTraceEvent,
   EnrichmentMetadata,
   EnrichmentStrategy,
   Gap,
   GapResolution,
+  GovernanceIntervention,
+  GovernancePreset,
+  GovernanceSummary,
   IntentSignal,
+  MemoryGovernancePolicy,
   ModelCallerFn,
   ModelRecommendation,
   ModelRouterConfig,
@@ -36,6 +42,7 @@ export interface EnrichInput {
   conversation?: ConversationTurn[];
   enrichmentContext?: Record<string, unknown>;
   targetPlatform?: TargetPlatform;
+  preset?: GovernancePreset;
 }
 
 export class Pipeline {
@@ -55,6 +62,11 @@ export class Pipeline {
   private readonly modelUsageAdapter: KomatikModelUsageAdapter | null;
   private lastContext: ContextLayer[] = [];
   private readonly recentEnrichmentTokens: number[] = [];
+  private readonly defaultPreset: GovernancePreset;
+  private readonly governanceOverrides: Partial<MemoryGovernancePolicy>;
+  private readonly includeTrace: boolean;
+  private readonly maxTraceEvents: number;
+  private traceEvents: EnrichmentTraceEvent[] = [];
 
   constructor(config: UndercurrentConfig) {
     this.adapters = [...config.adapters].sort((a, b) => a.priority - b.priority);
@@ -65,6 +77,10 @@ export class Pipeline {
     this.defaultPlatform = config.targetPlatform ?? "generic";
     this.debug = config.debug ?? false;
     this.onEnrichment = config.onEnrichment;
+    this.defaultPreset = config.preset ?? "balanced";
+    this.governanceOverrides = config.governance ?? {};
+    this.includeTrace = config.observability?.includeTrace ?? true;
+    this.maxTraceEvents = config.observability?.maxTraceEvents ?? 64;
 
     if (config.sessionMonitor) {
       this.monitor = new SessionMonitor(config.sessionMonitor);
@@ -120,6 +136,9 @@ export class Pipeline {
     const conversation = input.conversation ?? [];
     const adapterTimings: Record<string, number> = {};
     const platform = input.targetPlatform ?? this.defaultPlatform;
+    const policy = this.resolveGovernancePolicy(input.preset);
+    const interventions: GovernanceIntervention[] = [];
+    this.resetTrace();
 
     // ── Session Lifecycle: Cold-Start Restoration ────────────────────────
     let restoredLayers: ContextLayer[] = [];
@@ -127,8 +146,16 @@ export class Pipeline {
       try {
         restoredLayers = await this.checkpointer.restoreFromSnapshot();
         this.log("cold-start restoration", restoredLayers.length, "layers");
+        this.pushTrace("gather", "restore_snapshot", "Loaded cold-start snapshot layers.", {
+          restoredLayers: restoredLayers.length,
+        });
       } catch {
         this.log("cold-start restoration failed, continuing without");
+        this.pushTrace(
+          "gather",
+          "restore_snapshot_failed",
+          "Cold-start restoration failed; continuing without snapshot layers.",
+        );
       }
     }
 
@@ -140,11 +167,15 @@ export class Pipeline {
     );
     this.hooks.afterClassify?.(intent);
     this.log("intent", intent);
+    this.pushTrace("classify", "intent_classified", "Intent classified for enrichment.", {
+      confidence: intent.confidence,
+    });
 
     const depth = this.determineDepth(intent);
+    this.pushTrace("classify", "depth_selected", `Selected enrichment depth: ${depth}.`);
 
     if (depth === "none") {
-      const result = this.passthrough(input.message, intent, start, platform);
+      const result = this.passthrough(input.message, intent, start, platform, policy.preset);
       this.trackSession(input.message, conversation, result.enrichedMessage);
       return result;
     }
@@ -158,7 +189,31 @@ export class Pipeline {
       adapterTimings,
       input.enrichmentContext,
     );
-    const context = [...restoredLayers, ...harvested];
+    const combinedContext = [...restoredLayers, ...harvested];
+    const { layers: context, interventions: contextInterventions } = this.applyContextGovernance(
+      combinedContext,
+      policy,
+    );
+    interventions.push(...contextInterventions);
+    const governanceSummary: GovernanceSummary = {
+      preset: policy.preset,
+      contextLayersBefore: combinedContext.length,
+      contextLayersAfter: context.length,
+      assumptionsBefore: 0,
+      assumptionsAfter: 0,
+      interventions: [...interventions],
+    };
+    this.hooks.afterGovernance?.(governanceSummary);
+    this.pushTrace(
+      "govern",
+      "context_governed",
+      "Applied context governance policy.",
+      {
+        before: combinedContext.length,
+        after: context.length,
+      },
+      { preset: policy.preset },
+    );
     this.hooks.afterGather?.(context);
     this.log("context layers", context.length);
 
@@ -170,11 +225,19 @@ export class Pipeline {
     this.hooks.beforeAnalyze?.(rawGaps);
 
     const resolvedGaps = await this.resolveGaps(rawGaps, context);
-    this.hooks.afterAnalyze?.(resolvedGaps);
-    this.log("gaps", { total: rawGaps.length, resolved: resolvedGaps.length });
+    const governedGaps = this.applyAssumptionGovernance(resolvedGaps, policy, interventions);
+    this.hooks.afterAnalyze?.(governedGaps);
+    this.log("gaps", { total: rawGaps.length, resolved: governedGaps.length });
+    this.pushTrace("govern", "assumptions_governed", "Applied assumption governance policy.", {
+      interventions: interventions.length,
+    });
 
-    const assumptions = this.extractAssumptions(resolvedGaps);
-    const clarifications = this.extractClarifications(resolvedGaps);
+    const assumptions = this.extractAssumptions(governedGaps);
+    const clarifications = this.extractClarifications(governedGaps);
+    governanceSummary.assumptionsBefore = this.extractAssumptions(resolvedGaps).length;
+    governanceSummary.assumptionsAfter = assumptions.length;
+    governanceSummary.interventions = [...interventions];
+    this.hooks.afterGovernance?.(governanceSummary);
 
     // ── Stage 4: Enrichment Composition ──────────────────────────────────
     this.hooks.beforeCompose?.({
@@ -184,9 +247,10 @@ export class Pipeline {
     });
 
     const enrichedMessage = await this.withTimeout(
-      this.strategy.compose(input.message, intent, context, assumptions, resolvedGaps),
+      this.strategy.compose(input.message, intent, context, assumptions, governedGaps),
       "compose",
     );
+    this.pushTrace("compose", "message_composed", "Generated enriched message.");
 
     const tokens = this.computeTokens(input.message, enrichedMessage, context);
     this.recordEnrichmentTokens(tokens.enrichedMessage + tokens.context);
@@ -194,7 +258,7 @@ export class Pipeline {
       originalMessage: input.message,
       intent,
       context,
-      gaps: resolvedGaps,
+      gaps: governedGaps,
       assumptions,
       clarifications: clarifications.slice(0, this.maxClarifications),
       enrichedMessage,
@@ -208,8 +272,20 @@ export class Pipeline {
         targetPlatform: platform,
         tokens,
         budget: this.computeBudget(tokens),
+        governance: governanceSummary,
+        trace: this.includeTrace
+          ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
+          : undefined,
       },
     };
+    this.pushTrace("finalize", "enrichment_complete", "Enrichment pipeline completed.", {
+      processingMs: result.metadata.processingTimeMs,
+      assumptions: assumptions.length,
+      clarifications: clarifications.length,
+    });
+    if (result.metadata.trace) {
+      result.metadata.trace.events = [...this.traceEvents];
+    }
 
     this.hooks.afterCompose?.(result);
     this.onEnrichment?.(result);
@@ -365,9 +441,11 @@ export class Pipeline {
     intent: IntentSignal,
     startTime: number,
     platform: TargetPlatform,
+    preset: GovernancePreset,
   ): EnrichedPrompt {
     const tokens = this.computeTokens(message, message, []);
     this.recordEnrichmentTokens(tokens.enrichedMessage);
+    this.pushTrace("finalize", "passthrough", "Message passed through without enrichment.");
     return {
       originalMessage: message,
       intent,
@@ -385,8 +463,202 @@ export class Pipeline {
         targetPlatform: platform,
         tokens,
         budget: this.computeBudget(tokens),
+        governance: {
+          preset,
+          contextLayersBefore: 0,
+          contextLayersAfter: 0,
+          assumptionsBefore: 0,
+          assumptionsAfter: 0,
+          interventions: [],
+        },
+        trace: this.includeTrace
+          ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
+          : undefined,
       },
     };
+  }
+
+  private resolveGovernancePolicy(requestPreset?: GovernancePreset): MemoryGovernancePolicy {
+    const preset = requestPreset ?? this.defaultPreset;
+    const defaultsByPreset: Record<GovernancePreset, MemoryGovernancePolicy> = {
+      "strict-governance": {
+        preset,
+        maxContextAgeMs: 24 * 60 * 60 * 1000,
+        criticalAssumptionMinConfidence: 0.8,
+        assumptionMinConfidence: 0.72,
+        blockLowConfidenceAssumptions: true,
+        dropStaleContext: true,
+        maxAssumptionsPerMessage: 2,
+      },
+      balanced: {
+        preset,
+        maxContextAgeMs: 72 * 60 * 60 * 1000,
+        criticalAssumptionMinConfidence: 0.7,
+        assumptionMinConfidence: 0.62,
+        blockLowConfidenceAssumptions: true,
+        dropStaleContext: true,
+        maxAssumptionsPerMessage: 3,
+      },
+      "speed-first": {
+        preset,
+        maxContextAgeMs: 7 * 24 * 60 * 60 * 1000,
+        criticalAssumptionMinConfidence: 0.6,
+        assumptionMinConfidence: 0.5,
+        blockLowConfidenceAssumptions: false,
+        dropStaleContext: false,
+        maxAssumptionsPerMessage: 5,
+      },
+    };
+    return { ...defaultsByPreset[preset], ...this.governanceOverrides, preset };
+  }
+
+  private applyContextGovernance(
+    layers: ContextLayer[],
+    policy: MemoryGovernancePolicy,
+  ): { layers: ContextLayer[]; interventions: GovernanceIntervention[] } {
+    if (!policy.dropStaleContext) {
+      return { layers, interventions: [] };
+    }
+    const now = Date.now();
+    const interventions: GovernanceIntervention[] = [];
+    const filtered = layers.filter((layer) => {
+      const age = now - layer.timestamp;
+      const stale = age > policy.maxContextAgeMs;
+      if (stale) {
+        interventions.push({
+          type: "context-filtered",
+          reason: `Dropped stale context layer older than ${policy.maxContextAgeMs}ms.`,
+          targetId: `${layer.source}:${layer.timestamp}`,
+          severity: "info",
+        });
+      }
+      return !stale;
+    });
+    return { layers: filtered, interventions };
+  }
+
+  private applyAssumptionGovernance(
+    gaps: Gap[],
+    policy: MemoryGovernancePolicy,
+    interventions: GovernanceIntervention[],
+  ): Gap[] {
+    const governed: Gap[] = [];
+    const assumedIndexes: number[] = [];
+
+    for (const gap of gaps) {
+      if (gap.resolution?.type !== "assumed") {
+        governed.push(gap);
+        continue;
+      }
+      const assumption = {
+        ...gap.resolution.assumption,
+        provenance: this.buildAssumptionProvenance(gap.resolution.assumption),
+      };
+      const min = gap.critical
+        ? policy.criticalAssumptionMinConfidence
+        : policy.assumptionMinConfidence;
+      if (assumption.confidence < min && policy.blockLowConfidenceAssumptions) {
+        interventions.push({
+          type: "assumption-blocked",
+          reason: `Assumption confidence ${assumption.confidence.toFixed(2)} below threshold ${min.toFixed(2)}.`,
+          targetId: gap.id,
+          severity: "warn",
+        });
+        governed.push({
+          ...gap,
+          resolution: {
+            type: "needs-clarification",
+            clarification: this.buildClarificationForBlockedAssumption(gap, assumption.confidence),
+          },
+        });
+        continue;
+      }
+      governed.push({
+        ...gap,
+        resolution: { ...gap.resolution, assumption },
+      });
+      assumedIndexes.push(governed.length - 1);
+    }
+
+    if (assumedIndexes.length > policy.maxAssumptionsPerMessage) {
+      const ranked = assumedIndexes
+        .map((idx) => ({
+          idx,
+          confidence:
+            ((governed[idx]!.resolution as Extract<GapResolution, { type: "assumed" }>).assumption
+              .confidence ?? 0),
+        }))
+        .sort((a, b) => b.confidence - a.confidence);
+      const keep = new Set(
+        ranked.slice(0, policy.maxAssumptionsPerMessage).map((entry) => entry.idx),
+      );
+      for (const entry of ranked.slice(policy.maxAssumptionsPerMessage)) {
+        const gap = governed[entry.idx]!;
+        interventions.push({
+          type: "assumption-trimmed",
+          reason: `Trimmed to maxAssumptionsPerMessage=${policy.maxAssumptionsPerMessage}.`,
+          targetId: gap.id,
+          severity: "info",
+        });
+        if (!keep.has(entry.idx)) {
+          governed[entry.idx] = {
+            ...gap,
+            resolution: {
+              type: "needs-clarification",
+              clarification: this.buildClarificationForBlockedAssumption(gap, entry.confidence),
+            },
+          };
+        }
+      }
+    }
+
+    return governed;
+  }
+
+  private buildAssumptionProvenance(assumption: Assumption): AssumptionProvenance {
+    return {
+      contextSources: [assumption.source],
+      contextLayerCount: 1,
+      resolutionType: "inferred",
+      generatedAt: Date.now(),
+    };
+  }
+
+  private buildClarificationForBlockedAssumption(gap: Gap, confidence: number) {
+    return {
+      id: `clarify-${gap.id}`,
+      question: `Need confirmation: ${gap.description}`,
+      options: [
+        { id: "yes", label: "Yes, that's correct", isDefault: true },
+        { id: "no", label: "No, use a different assumption", isDefault: false },
+      ],
+      allowMultiple: false,
+      defaultOptionId: "yes",
+      reason: `Assumption confidence too low (${Math.round(confidence * 100)}%).`,
+    };
+  }
+
+  private resetTrace(): void {
+    this.traceEvents = [];
+  }
+
+  private pushTrace(
+    stage: EnrichmentTraceEvent["stage"],
+    event: string,
+    detail: string,
+    metrics?: Record<string, number>,
+    meta?: Record<string, unknown>,
+  ): void {
+    if (!this.includeTrace) return;
+    if (this.traceEvents.length >= this.maxTraceEvents) return;
+    this.traceEvents.push({
+      at: Date.now(),
+      stage,
+      event,
+      detail,
+      metrics,
+      meta,
+    });
   }
 
   private recordEnrichmentTokens(total: number): void {
