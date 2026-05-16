@@ -10,6 +10,16 @@ Think of it as a translation device sitting between humans and AI: you speak nat
 
 Every human message to an AI system is a lossy compression of their actual intent. The human has a rich mental model — they express 10% of it. Current solutions either ask the human to write better prompts (they won't) or ask 20 clarifying questions (they hate that). Undercurrent takes a third path: silently enrich the message with inferred intent, harvested context, and transparent assumptions.
 
+## Context Reliability System (CRS)
+
+Slipstream now ships a core reliability layer for high-stakes enrichment workflows:
+
+- **Memory governance**: precedence-aware assumptions, stale-context filtering, confidence gates, and bounded assumptions per message.
+- **Decision observability**: stage-by-stage trace events and explicit governance intervention records in metadata.
+- **Operational presets**: `strict-governance`, `balanced`, and `speed-first` for predictable behavior by environment.
+
+This is designed to avoid the most common production failures in context systems: silent stale memory usage, low-confidence assumptions, and opaque enrichment behavior.
+
 ## Quick Start
 
 ```ts
@@ -24,6 +34,11 @@ const uc = new Undercurrent({
     new FilesystemAdapter({ root: "./src" }),
   ],
   strategy: new DefaultStrategy(),
+  preset: "balanced", // or "strict-governance" | "speed-first"
+  governance: {
+    maxContextAgeMs: 72 * 60 * 60 * 1000,
+    assumptionMinConfidence: 0.62,
+  },
 });
 
 const result = await uc.enrich({
@@ -193,6 +208,46 @@ const uc = new Undercurrent({ adapters, strategy });
 ```
 
 The `llmCall` callback receives a plain string prompt and must return a plain string response. No SDK dependency — you bring your own LLM gateway (OpenAI, Anthropic, Google, local model, etc.). JSON parsing is resilient: handles raw JSON, markdown-fenced code blocks, and embedded JSON in prose.
+
+## Presets and reliability posture
+
+`@komatik/slipstream` exposes three governance presets:
+
+- `strict-governance`: strongest confidence gates, shortest context freshness window, lowest assumption tolerance.
+- `balanced`: recommended default for most production teams.
+- `speed-first`: lighter safety gates when minimizing latency and manual clarifications is the top priority.
+
+Programmatic helper:
+
+```ts
+import { withPreset } from "@komatik/slipstream";
+
+const config = withPreset(
+  {
+    adapters,
+    strategy,
+  },
+  "strict-governance",
+);
+```
+
+## Benchmarked outcomes via replay harness
+
+The replay harness now reports measurable reliability outcomes so teams can compare governed vs unguided behavior on their own transcripts:
+
+- assumption reduction after governance
+- stale context filtered
+- intervention counts by type
+- token overhead and token multiplier
+- average trace events per message
+
+Run:
+
+```bash
+npm run replay -- path/to/transcript.jsonl --verbose
+```
+
+These outputs are intended to provide an ROI loop before changing pricing/packaging: prove quality-per-token and reliability gains first, then optimize rollout strategy.
 
 ### Platform-Aware Composition
 
