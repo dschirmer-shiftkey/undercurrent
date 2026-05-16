@@ -3,97 +3,89 @@ description: Base Camp Autonomous Workforce Awareness — you are the last line 
 alwaysApply: true
 ---
 
-# Base Camp Awareness
+# Base Camp Awareness (auto-distributed)
 
 > Source: Komatik/.cursor/rules/KOMATIK-BASE-CAMP-PROMPT.md
-> Last distributed: 2026-04-15
+> Last distributed: 2026-05-08
 
 ## What Is Base Camp?
+21 specialized AI agents run 24/7 on the DGX Spark via OpenClaw, autonomously creating branches, PRs, and merging code across 15 repositories. You are the quality gate.
 
-17 AI agents run 24/7 on a headless NUC, creating branches, opening PRs, and merging
-code into `dev` continuously. **You are the last line of defense** before code reaches
-`staging` or `master`.
-
-## 4 Mandatory Workflows
-
-### 1. Session Start
-```bash
-git fetch origin --prune
-git log --oneline HEAD..origin/main | wc -l
-gh pr list --state open --json number,title,headRefName --jq '.[] | select(.headRefName | test("^(claude/|agent/)")) | "#\(.number) — \(.title)"'
-```
-```
-CallMcpTool(server="user-komatik-readonly", toolName="query_events", arguments={"limit": 10})
-CallMcpTool(server="user-komatik-readonly", toolName="get_messages", arguments={"agent_id": "cursor-workspace"})
-```
-
-### 2. Before Any New Task
-```bash
-gh pr list --state all --limit 50 --json number,title,state --jq '.[] | select(.title | test("KEYWORD"; "i")) | "\(.state) #\(.number) — \(.title)"'
-git branch -r | grep -i "KEYWORD"
-```
-
-### 3. Reviewing Agent PRs — 10-Point Security Checklist
-A single BLOCKING failure = reject the PR.
-
-1. **No destructive SQL** — BLOCKING
-2. **RLS on new tables** — BLOCKING
-3. **Auth on API routes** — BLOCKING
-4. **No secrets in code** — BLOCKING
-5. **No force pushes** — BLOCKING
-6. **Prompt sanitization** — BLOCKING
-7. **Ownership checks** — HIGH
-8. **Rate limiting** — HIGH
-9. **Type safety** — HIGH
-10. **Import resolution** — MEDIUM
-
-### 4. After Agent Merges — Stability Check
-```bash
-git checkout main && git pull origin main
-npm run build
-npm test
-```
-
-## Agent Branch Patterns
-
-| Pattern | Origin |
-|---------|--------|
-| `claude/<two-word-slug>` | Claude Code on NUC |
-| `agent/<agent-id>/<desc>` | OpenClaw scheduled agent |
-| `cursor/<desc>-<4hex>` | Cursor on NUC |
-| `cursor/<desc>` (no hex) | Probably YOUR workspace |
+## 5 Mandatory Workflows
+1. **Session Start** — fetch origin, check agent PRs, check events table, check messages
+2. **Before Task** — search for existing agent work before creating branches
+3. **Review Agent PR** — 10-point security checklist (6 BLOCKING: no destructive SQL, RLS on new tables, auth on routes, no secrets, no force pushes, prompt sanitization)
+4. **After Merges** — pull dev, build, test, structural coherence check
+5. **Work Completed** — send_message to coordinator, log_decision, close board tasks
 
 ## Trust Levels
+- HIGH TRUST: docs, deps, linter fixes, tests
+- VERIFY: pipeline logic, model routing, UI, API routes
+- FULL REVIEW: schema migrations, RLS, Stripe/payment, auth, Edge Functions
 
-**HIGH TRUST (quick review)**: docs, dependency patches, lint fixes, tests
-**VERIFY CAREFULLY**: pipeline logic, model routing, UI, API routes
-**ALWAYS LINE-BY-LINE**: schema migrations, RLS, Stripe/payment, auth, Edge Functions
+## Agent Branch Patterns
+- `claude/<two-word-slug>` — Spark Claude Code
+- `agent/<agent-id>/<desc>` — Spark OpenClaw
+- `cursor/<desc>-<4hex>` — Spark Cursor
+- `cursor/<desc>` (no hex) — probably YOUR workspace
 
-## MCP Bridge — Read + Write
+## Querying Agent State
+Agent execution data comes from OpenClaw native state. Query the Base Camp dashboard API
+(e.g. `/api/agents`, `/api/health`, `/api/activity`, `/api/costs`) or OpenClaw CLI directly.
 
-Read tools (query state):
-```
-CallMcpTool(server="user-komatik-readonly", toolName="get_system_health", arguments={})
-CallMcpTool(server="user-komatik-readonly", toolName="query_agent_runs", arguments={"limit": 10})
-CallMcpTool(server="user-komatik-readonly", toolName="query_events", arguments={"limit": 10})
-```
+## The 21 Agents
 
-Write tools (coordinate with NUC agents):
-```
-CallMcpTool(server="user-komatik-readonly", toolName="send_message", arguments={"to_agent": "coordinator", "subject": "...", "body": "...", "priority": "normal"})
-CallMcpTool(server="user-komatik-readonly", toolName="create_task", arguments={"project_slug": "undercurrent", "title": "...", "priority": "medium"})
-CallMcpTool(server="user-komatik-readonly", toolName="update_task_status", arguments={"task_id": "<uuid>", "column": "done"})
-```
+| Codename | Agent ID | Role | Risk |
+|----------|----------|------|------|
+| Koda | coordinator | Chief of Staff — delegation, briefings | LOW |
+| Relay | pipeline-ops | Pipeline monitoring, DB health, Edge Functions | **HIGH** |
+| Pixel | frontend-dev | Next.js / React UI | MEDIUM |
+| Smith | backend-dev | API routes, Edge Functions, background jobs | MEDIUM |
+| Vault | infra-ops | Supabase, migrations, RLS, cron | **CRITICAL** |
+| Sentinel | security-qa | Security audits, vuln scanning (veto power) | LOW |
+| Compass | product-pm | Business logic, pricing | LOW |
+| Ledger | payments | Stripe, payouts, invoicing | **HIGH** |
+| Weaver | prompt-eng | LLM prompt quality, model routing | MEDIUM |
+| Harbor | release-mgr | Git ops, PRs, branch mgmt, releases | MEDIUM |
+| Blueprint | api-architect | API contracts, cross-service validation | MEDIUM |
+| Scribe | tech-writer | Documentation accuracy | LOW |
+| Mirror | agent-tuner | Agent perf tuning (Mon+Thu) | LOW |
+| Prism | data-analyst | Data quality, analytics, anomaly detection | LOW |
+| Tracker | knowledge-scout | Tool discovery, pattern mining | LOW |
+| Orbit | satellite-watcher | Cross-repo monitoring (15 repos) | LOW |
+| Edison | rd-platform | R&D platform research | LOW |
+| Tesla | rd-satellite | R&D satellite research | LOW |
+| Beacon | marketing | Marketing lead — strategy, content calendar, SEO | LOW |
+| Echo | social-distribution | Social media, newsletter, content distribution | LOW |
+| Herald | outreach | Email campaigns, lead capture, CRM pipeline | LOW |
 
-All writes are rate-limited and tagged `cursor-workspace`. NEVER conclude Base Camp "hasn't launched" from git alone — query the bridge first.
+## Monitored Repositories (15)
+Komatik, komatik-agents, komatik-base-camp, komatik-vector (Vector), deployguard (Trailhead), daydream-studio (Sundog),
+storyboard-studio (Kindling), shieldcheck (Floe), reviewflow (Traverse), mcp-brokerage (Pack),
+rescue-engineering (Trace), shadow-ai-governance (Watchtower), drift, komatik-yggdrasil (Cairn), Bored (Lodge)
+
+## 10-Point PR Security Checklist (6 BLOCKING)
+1. [BLOCKING] No destructive SQL (DROP TABLE/COLUMN, TRUNCATE, DELETE without WHERE)
+2. [BLOCKING] RLS enabled on every new table, policies tested
+3. [BLOCKING] Auth checks on every new API route/Edge Function
+4. [BLOCKING] No secrets, tokens, or API keys in code
+5. [BLOCKING] No force pushes or history rewrites
+6. [BLOCKING] User input sanitized before LLM prompt injection
+7. Test coverage present for new logic
+8. Types match schema (run type generation if schema changed)
+9. No duplicate work (check for parallel agent branches)
+10. Consistent patterns (matches existing codebase conventions)
+
+## Workflow Engine & Suggestion-Only Policy (BC7 → BC7.1)
+Agents execute multi-step work via the workflow engine (`create_workflow` → `advance_workflow` → `complete_step`). As of Apr 25, 2026, agents are **suggestion-only**: `git_operations` has been revoked from developer/researcher RBAC roles. Agents propose changes via `write_workspace_file` + `create_task` (assignee: `cursor-workspace`). David reviews and implements. Step transitions trigger agent wake-ups via `WORKFLOW_WAKE_ENABLED`. Safeguards:
+- `expire-stale-workflows.js` — cancels zombie workflows and cascade-cancels blocked dependents
+- `post-session.sh` — auto-fails running steps when agent sessions end
+- `verify-shipped-output.js` — audits completed steps every 4h for missing output
 
 ## Emergency: Agent Merged Bad Code
-
-1. `git revert <hash> --no-edit && git push origin main`
-2. Close open PRs from the same agent session
-3. Notify David with PR number and what was destructive
+1. git revert <hash> --no-edit && git push origin dev
+2. Close related agent PRs
+3. Notify David
 
 ## The Rule
-
-> The agents work for us. We don't work for them.
-> Check before you build. Review before you merge. Test before you promote.
+NEVER conclude Base Camp "hasn't launched" based on static git analysis. Query the dashboard API or OpenClaw CLI. The system is live — 336+ agent runs, 20/21 agents active (7-day window), 579+ inter-agent messages, 230+ tasks on the board, 133 workflows created, 2700+ GitHub events tracked, 6 marketing channels live.
