@@ -478,6 +478,21 @@ Can you look at why step 4 is timing out?`;
       expect(fileGap).toBeDefined();
     });
 
+    it("detects file references wrapped in punctuation", async () => {
+      const msg = 'fix this: ("src/auth/login.ts"), it crashes';
+      const intent = await strategy.classifyIntent(msg, []);
+      const gaps = await strategy.analyzeGaps(intent, [], msg);
+      const fileGap = gaps.find((g) => g.description.includes("file"));
+      expect(fileGap).toBeUndefined();
+    });
+
+    it("detects line references without regex matching", async () => {
+      const msg = "please update validation in auth.ts at line 42";
+      const intent = await strategy.classifyIntent(msg, []);
+      expect(intent.scope).toBe("atomic");
+      expect(intent.specificity).not.toBe("low");
+    });
+
     describe("selection-reference detection", () => {
       const selectionCases = [
         "option a please",
