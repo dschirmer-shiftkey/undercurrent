@@ -68,6 +68,7 @@
     "prepublishOnly": "npm run build",
     "start:mcp": "node dist/mcp/index.js",
     "playground": "tsx src/playground/repl.ts",
+    "playground:pilot": "tsx src/playground/pilot.ts",
     "replay": "tsx src/playground/replay.ts",
     "eval:reliability": "tsx src/playground/reliability-gate.ts --matrix ci/reliability-matrix.json",
     "eval:reliability:single": "tsx src/playground/reliability-gate.ts --baseline ci/reliability-baseline.json --transcript fixtures/replay/reliability-ci.jsonl --platform generic",

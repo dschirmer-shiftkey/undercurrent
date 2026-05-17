@@ -283,6 +283,31 @@ Telemetry includes:
 - governance effect (`governanceInterventions`, `blockedAssumptions`)
 - acceptance rate via `recordOutcome()` + `summarizeRoi()`
 
+### Local pilot harness for iteration
+
+Before porting the pilot path to a real product, use `runPilotSimulation()` to wire the full chain (Undercurrent → KomatikPilotProcessor → outcome writer → ROI summary) with mock clients and a stub model caller. Replace `caller`, `client`, and `writeClient` with real implementations when porting.
+
+```ts
+import { runPilotSimulation } from "@komatik/slipstream/komatik";
+
+const result = await runPilotSimulation({
+  messages: ["Fix the auth crash in login.ts", "Add a regression test"],
+  sourceApp: "forge",
+  preset: "balanced",
+  // caller, client, writeClient default to in-memory simulators
+  // verdictRule defaults to: accept if depth=none OR (mult<4 AND latency<800ms)
+});
+
+console.log(result.roi);
+console.log(result.writes.enrichment_outcomes);
+```
+
+CLI version replays a transcript end-to-end:
+
+```bash
+npm run playground:pilot -- --transcript fixtures/replay/preflight-stress.jsonl --preset safety-first --verbose
+```
+
 ## Closed feedback loop persistence
 
 Use `KomatikOutcomeWriter` to persist every enrichment and later attach user verdicts (`accepted`/`rejected`/`revised`/`ignored`) to the same enrichment id:
