@@ -21,6 +21,7 @@ export type {
   SessionScope,
   SessionStartInput,
   SessionHandle,
+  ResumedSessionInfo,
   ProcessInput,
   ProcessOutput,
   RecordOutcomeInput,

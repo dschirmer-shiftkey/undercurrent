@@ -294,6 +294,25 @@ export class DriftMonitor {
     return new Map(this.registry);
   }
 
+  /**
+   * Seed the registry with previously-canonical entities (e.g., restored
+   * from a session snapshot). Existing entries are NOT overwritten — the
+   * current session's first-seen rule still wins for any entity already
+   * tracked. Entries seeded this way have firstSeenTurn=-1 (carried over).
+   */
+  seedCanonicals(canonicals: string[]): void {
+    for (const canonical of canonicals) {
+      if (canonical.length < 3) continue;
+      const key = normalizeKey(canonical);
+      if (this.registry.has(key)) continue;
+      this.registry.set(key, {
+        canonical,
+        firstSeenTurn: -1,
+        occurrences: 0,
+      });
+    }
+  }
+
   /** Apply auto-rewrite-class drift events to a message and return the rewritten form. */
   rewrite(message: string, events: DriftEvent[]): string {
     let out = message;

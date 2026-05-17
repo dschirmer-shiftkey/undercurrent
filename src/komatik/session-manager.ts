@@ -8,12 +8,17 @@ import { KomatikPilotProcessor } from "./pilot.js";
 import type { PilotOutcome, PilotRoiSummary, PilotProcessTelemetry } from "./pilot.js";
 import { KomatikOutcomeWriter } from "./outcome-writer.js";
 import { KomatikPreferenceClient } from "./preference-client.js";
+import { KomatikSessionWriter } from "./session-writer.js";
 import type {
+  CompactionResult,
   ConversationTurn,
   EnrichedPrompt,
   ModelCallerFn,
   ModelRecommendation,
   ScoringWeights,
+  SessionSnapshot,
+  SessionState,
+  SessionWriter,
   TargetPlatform,
 } from "../types.js";
 import type { KomatikDataClient, KomatikWriteClient } from "./client.js";
@@ -57,6 +62,27 @@ export interface SessionHandle {
   userId: string;
   tierBias: TierBias;
   startedAt: number;
+  /**
+   * When a project-scope session resumes from a stored snapshot, this is
+   * populated with the prior session's summary. null when starting fresh
+   * (no prior snapshot) or for sandbox-scope sessions (no persistence).
+   */
+  resumedFrom: ResumedSessionInfo | null;
+}
+
+export interface ResumedSessionInfo {
+  /** When the prior snapshot was written. */
+  snapshotAt: number;
+  /** Short human-readable summary of what was active in the prior session. */
+  summary: string;
+  /** Number of conversation turns restored from the snapshot. */
+  restoredTurns: number;
+  /** Drift canonicals restored from the snapshot's keyTerminology. */
+  restoredCanonicals: number;
+  /** Decisions carried over (for the IDE to show "you were here" prompts). */
+  decisions: string[];
+  /** Unresolved items from the prior session. */
+  unresolvedItems: string[];
 }
 
 export interface ProcessInput {
@@ -91,6 +117,7 @@ export interface RecordOutcomeInput {
 
 export type SessionEvent =
   | { kind: "session-started"; handle: SessionHandle }
+  | { kind: "session-resumed"; sessionId: string; resumedFrom: ResumedSessionInfo }
   | { kind: "model-selected"; sessionId: string; recommendation: ModelRecommendation }
   | { kind: "outcome-recorded"; sessionId: string; outcome: PilotOutcome }
   | { kind: "drift-elevated"; sessionId: string; gauge: DriftGauge }
@@ -111,6 +138,17 @@ export interface SessionManagerConfig {
   onSessionEvent?: (event: SessionEvent) => void;
   /** Default target platform if none passed per request. Default "cursor". */
   defaultPlatform?: TargetPlatform;
+  /**
+   * Override the SessionWriter used for project-scope persistence. Defaults
+   * to a KomatikSessionWriter built from writeClient. Useful for tests or
+   * for products that want to plug a different persistence backend.
+   */
+  sessionWriter?: SessionWriter;
+  /**
+   * How many recent turns to persist in the session snapshot for resume.
+   * Default 50. Larger = more faithful resume; smaller = less storage.
+   */
+  resumeTurnLimit?: number;
 }
 
 /**
@@ -139,21 +177,30 @@ export const TIER_WEIGHT_PRESETS: Record<TierBias, ScoringWeights> = {
   },
 };
 
-interface SessionState {
+interface ActiveSessionState {
   handle: SessionHandle;
   slipstream: Slipstream;
   pilot: KomatikPilotProcessor;
   drift: DriftMonitor;
   conversation: ConversationTurn[];
   turnCount: number;
+  /** Decisions / unresolved items carried in from a resumed snapshot; persisted again on endSession. */
+  resumedDecisions: string[];
+  resumedUnresolved: string[];
 }
 
 export class SlipstreamSessionManager {
-  private readonly config: Required<Pick<SessionManagerConfig, "defaultTierBias" | "driftRefreshThreshold" | "defaultPlatform">> &
+  private readonly config: Required<
+    Pick<
+      SessionManagerConfig,
+      "defaultTierBias" | "driftRefreshThreshold" | "defaultPlatform" | "resumeTurnLimit"
+    >
+  > &
     SessionManagerConfig;
-  private readonly sessions = new Map<string, SessionState>();
+  private readonly sessions = new Map<string, ActiveSessionState>();
   private readonly emittedDriftElevated = new Set<string>();
   private readonly preferenceClient: KomatikPreferenceClient;
+  private readonly sessionWriter: SessionWriter;
   /** In-memory tier-bias cache per user. Avoids re-querying user_preferences for repeat sessions. */
   private readonly tierBiasCache = new Map<string, TierBias | null>();
 
@@ -162,12 +209,14 @@ export class SlipstreamSessionManager {
       defaultTierBias: "balanced",
       driftRefreshThreshold: 40,
       defaultPlatform: "cursor",
+      resumeTurnLimit: 50,
       ...config,
     };
     this.preferenceClient = new KomatikPreferenceClient({
       client: config.client,
       writeClient: config.writeClient,
     });
+    this.sessionWriter = config.sessionWriter ?? new KomatikSessionWriter(config.writeClient);
   }
 
   /** Start a new session. Sandbox sessions skip outcome persistence. */
@@ -189,12 +238,17 @@ export class SlipstreamSessionManager {
       const stored = await this.resolveStoredTierBias(input.user.id);
       tierBias = stored ?? this.config.defaultTierBias;
     }
+    // Project-scope sessions try to resume from a prior snapshot.
+    // Sandbox sessions always start fresh.
+    const restored = input.scope === "project" ? await this.loadResume(input.sessionId) : null;
+
     const handle: SessionHandle = {
       sessionId: input.sessionId,
       scope: input.scope,
       userId: input.user.id,
       tierBias,
       startedAt: Date.now(),
+      resumedFrom: restored?.info ?? null,
     };
 
     const slipstream = new Slipstream({
@@ -235,17 +289,36 @@ export class SlipstreamSessionManager {
     });
 
     const drift = new DriftMonitor({ refreshThreshold: this.config.driftRefreshThreshold });
+    if (restored) {
+      drift.seedCanonicals(restored.canonicals);
+    }
+
+    // Conversation seed priority: explicit input > resumed snapshot > empty.
+    const seededConversation: ConversationTurn[] = input.conversation
+      ? [...input.conversation]
+      : restored
+        ? [...restored.conversation]
+        : [];
 
     this.sessions.set(input.sessionId, {
       handle,
       slipstream,
       pilot,
       drift,
-      conversation: input.conversation ? [...input.conversation] : [],
+      conversation: seededConversation,
       turnCount: 0,
+      resumedDecisions: restored?.decisions ?? [],
+      resumedUnresolved: restored?.unresolved ?? [],
     });
 
     this.config.onSessionEvent?.({ kind: "session-started", handle });
+    if (restored) {
+      this.config.onSessionEvent?.({
+        kind: "session-resumed",
+        sessionId: input.sessionId,
+        resumedFrom: restored.info,
+      });
+    }
     return handle;
   }
 
@@ -318,10 +391,18 @@ export class SlipstreamSessionManager {
     });
   }
 
-  /** End a session — emits final ROI event and frees state. */
+  /**
+   * End a session — emits final ROI event, persists a snapshot for project-
+   * scope sessions (so the next startSession can resume), and frees state.
+   */
   async endSession(sessionId: string): Promise<PilotRoiSummary> {
     const state = this.requireSession(sessionId);
     const roi = state.pilot.summarizeRoi();
+
+    if (state.handle.scope === "project") {
+      await this.persistSnapshot(state);
+    }
+
     this.config.onSessionEvent?.({ kind: "session-ended", sessionId, roi });
     this.sessions.delete(sessionId);
     this.emittedDriftElevated.delete(sessionId);
@@ -386,11 +467,119 @@ export class SlipstreamSessionManager {
     return stored;
   }
 
-  private requireSession(sessionId: string): SessionState {
+  private requireSession(sessionId: string): ActiveSessionState {
     const state = this.sessions.get(sessionId);
     if (!state) {
       throw new Error(`SlipstreamSessionManager: no active session for ${sessionId}.`);
     }
     return state;
   }
+
+  /**
+   * Load a prior snapshot for this sessionId, if any. Returns the restored
+   * state plus a SessionHandle.resumedFrom info object. Returns null when
+   * there is no snapshot or the snapshot is unusable.
+   *
+   * KomatikSessionWriter stores snapshots keyed by sessionId (in the user_id
+   * column, see writer impl) — so getLatestSnapshot(sessionId) returns the
+   * exact prior session's snapshot, not a cross-session mix.
+   */
+  private async loadResume(sessionId: string): Promise<ResumedSessionPayload | null> {
+    let snapshot: SessionSnapshot | null = null;
+    try {
+      snapshot = await this.sessionWriter.getLatestSnapshot(sessionId);
+    } catch {
+      return null;
+    }
+    if (!snapshot) return null;
+
+    const compaction = snapshot.compaction;
+    const handoff = snapshot.handoff;
+    const conversation: ConversationTurn[] = compaction?.recentExchanges ?? [];
+    const canonicals = compaction?.terminology
+      ? Object.values(compaction.terminology)
+      : [];
+    const decisions = handoff?.decisions.map((d) => d.summary) ?? compaction?.decisions ?? [];
+    const unresolved = handoff?.unresolvedItems ?? compaction?.unresolved ?? [];
+
+    const summary =
+      handoff?.summary ??
+      compaction?.summary ??
+      `Prior session snapshot from ${new Date(snapshot.createdAt).toISOString()}`;
+
+    return {
+      conversation,
+      canonicals,
+      decisions,
+      unresolved,
+      info: {
+        snapshotAt: snapshot.createdAt,
+        summary,
+        restoredTurns: conversation.length,
+        restoredCanonicals: canonicals.length,
+        decisions,
+        unresolvedItems: unresolved,
+      },
+    };
+  }
+
+  /** Build a snapshot from the active session state and write it via the SessionWriter. */
+  private async persistSnapshot(state: ActiveSessionState): Promise<void> {
+    const recentExchanges = state.conversation.slice(-this.config.resumeTurnLimit);
+    const driftRegistry = state.drift.getRegistry();
+    const terminology: Record<string, string> = {};
+    for (const [key, entry] of driftRegistry) {
+      // Only persist canonicals that were actually seen this session (skip pinned
+      // defaults that nobody used) so the registry doesn't grow without bound.
+      if (entry.occurrences > 0 || entry.firstSeenTurn >= 0) {
+        terminology[key] = entry.canonical;
+      }
+    }
+
+    const compaction: CompactionResult = {
+      summary: `Session ${state.handle.sessionId}: ${state.turnCount} turn(s), drift ${state.drift.gauge().level}`,
+      decisions: state.resumedDecisions,
+      activeWork: [],
+      unresolved: state.resumedUnresolved,
+      terminology,
+      recentExchanges,
+      estimatedTokensSaved: 0,
+    };
+
+    const sessionState: SessionState = {
+      sessionId: state.handle.sessionId,
+      startedAt: state.handle.startedAt,
+      messageCount: state.turnCount * 2, // user + assistant per turn
+      estimatedTokens: 0,
+      tokenBudget: 0,
+      topicShiftCount: 0,
+      health: "healthy",
+      lastCheckpoint: Date.now(),
+      decisionsThisSession: state.resumedDecisions,
+      activeWorkItems: [],
+      unresolvedItems: state.resumedUnresolved,
+    };
+
+    const snapshot: SessionSnapshot = {
+      sessionId: state.handle.sessionId,
+      createdAt: Date.now(),
+      state: sessionState,
+      compaction,
+      handoff: null,
+    };
+
+    try {
+      await this.sessionWriter.writeSnapshot(snapshot);
+    } catch {
+      // Graceful degradation — failing to save the snapshot doesn't break the IDE flow.
+    }
+  }
+}
+
+interface ResumedSessionPayload {
+  conversation: ConversationTurn[];
+  canonicals: string[];
+  decisions: string[];
+  unresolved: string[];
+  info: ResumedSessionInfo;
 }
