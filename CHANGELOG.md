@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.4.0] - 2026-05-17
+
+### Added — OpenTelemetry-GenAI telemetry emitter
+
+- **`SlipstreamConfig.telemetry`** — optional `TelemetryEmitter` that receives an OTel-GenAI-shaped span per `enrich()` and `process()` call. Slipstream stays zero-dep; consumers bring their own backend (OTel SDK, Langfuse, Helicone, Arize Phoenix, console).
+- **`TelemetrySpan`** — span shape mirrors the [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Attributes use `gen_ai.*` where the convention applies (`gen_ai.system`, `gen_ai.operation.name`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.model`) and `slipstream.*` for Slipstream-specific signals (`slipstream.tier_recommended`, `slipstream.tier_bias_applied`, `slipstream.degraded`, `slipstream.preflight_cascade_risk`, etc.).
+- **Per-adapter `adapter.completed` events** within each span — surfaces per-adapter status (`ok` / `empty` / `unavailable` / `error`) and layer count, so consumers can build per-adapter latency histograms.
+- **`buildEnrichSpan(args)` / `buildProcessSpan(args)`** exported helpers — pure functions that map Slipstream metadata to a `TelemetrySpan`. Useful for callers that want to construct spans outside the pipeline (e.g., manual instrumentation around custom flows).
+- **`safelyEmit(emitter, span)`** helper — wraps emitter calls so a throwing emitter never breaks the enrichment path.
+- New exported types: `TelemetryEmitter`, `TelemetrySpan`, `TelemetrySpanEvent`, `TelemetrySpanStatus`.
+
+### Why
+
+Today the IDE (and any consumer) has to either build a custom telemetry pipeline against Slipstream's `metadata` shape or skip per-session/per-user observability entirely. With this PR, a 10-line emitter implementation pushes standards-compliant spans to whatever backend the team uses. No custom schema, no per-backend adapter to write.
+
+### Two spans per `process()` (by design)
+
+- `slipstream.enrich` — emitted at the end of `enrich()`. Cost, governance, tier recommendation, per-adapter events.
+- `slipstream.process` — emitted at the end of `process()`. Same enrichment attributes PLUS model-routing details (`gen_ai.response.model`, `slipstream.model_latency_ms`, `slipstream.model_recommendation_confidence`).
+
+Both share `slipstream.enrichment_id` so consumers can correlate. Consumers who want only one can filter by `span.name` in their emitter.
+
 ## [2.3.0] - 2026-05-17
 
 ### Added — Cold-start learning for `tierRecommendation`

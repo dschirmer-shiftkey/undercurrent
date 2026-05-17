@@ -25,6 +25,7 @@ import type {
   PreflightResult,
   SessionHealth,
   TargetPlatform,
+  TelemetryEmitter,
   TierRecommendation,
   TierBiasLearnerInterface,
   TokenAccounting,
@@ -32,6 +33,7 @@ import type {
   HealthCheckResult,
   AdapterHealth,
 } from "../types.js";
+import { buildEnrichSpan, buildProcessSpan, safelyEmit } from "./telemetry.js";
 import { randomUUID } from "node:crypto";
 import { Checkpointer } from "./checkpointer.js";
 import { Compactor } from "./compactor.js";
@@ -70,6 +72,7 @@ export class Pipeline {
   private readonly modelRouterConfig: ModelRouterConfig | null;
   private readonly modelUsageAdapter: KomatikModelUsageAdapter | null;
   private readonly tierBiasLearner: TierBiasLearnerInterface | null;
+  private readonly telemetry: TelemetryEmitter | null;
   private lastContext: ContextLayer[] = [];
   private readonly recentEnrichmentTokens: number[] = [];
   private readonly defaultPreset: GovernancePreset;
@@ -131,6 +134,7 @@ export class Pipeline {
     }
 
     this.tierBiasLearner = config.tierBiasLearner ?? null;
+    this.telemetry = config.telemetry ?? null;
   }
 
   setHooks(hooks: PipelineHooks): void {
@@ -451,6 +455,26 @@ export class Pipeline {
     this.trackSession(activeMessage, conversation, enrichedMessage);
     await this.maybeCheckpoint(conversation);
 
+    // ── Telemetry emission (OTel-GenAI shape) ────────────────────────────
+    if (this.telemetry) {
+      const endedAt = Date.now();
+      const startedAt = endedAt - Math.round(result.metadata.processingTimeMs);
+      const userId =
+        typeof input.enrichmentContext?.userId === "string"
+          ? input.enrichmentContext.userId
+          : undefined;
+      const span = buildEnrichSpan({
+        result,
+        startedAt,
+        endedAt,
+        preset: policy.preset,
+        platform,
+        userId,
+        sessionId: this.monitor?.getSessionId() ?? null,
+      });
+      await safelyEmit(this.telemetry, span, (err) => this.log("telemetry emit failed", err));
+    }
+
     return result;
   }
 
@@ -459,6 +483,7 @@ export class Pipeline {
       throw new Error("Slipstream: process() requires modelRouter to be configured and enabled.");
     }
 
+    const processStartedAt = Date.now();
     const enrichedPrompt = await this.enrich(input);
     const { recommendation, degraded } = await this.routeModel(enrichedPrompt.intent);
 
@@ -489,7 +514,33 @@ export class Pipeline {
       enrichedSystemPrompt: enrichedPrompt.enrichedMessage,
     });
 
-    return { enrichedPrompt, modelRecommendation: recommendation, modelResponse };
+    const result: ProcessResult = { enrichedPrompt, modelRecommendation: recommendation, modelResponse };
+
+    // ── Telemetry: emit a process span on top of the enrich span ─────────
+    // The enrich() call already emitted `slipstream.enrich`. This adds
+    // `slipstream.process` containing model-routing + caller attributes.
+    // Consumers can filter by span name. Both spans share enrichment_id.
+    if (this.telemetry) {
+      const endedAt = Date.now();
+      const userId =
+        typeof input.enrichmentContext?.userId === "string"
+          ? input.enrichmentContext.userId
+          : undefined;
+      const platform = input.targetPlatform ?? this.defaultPlatform;
+      const preset = input.preset ?? this.defaultPreset;
+      const span = buildProcessSpan({
+        result,
+        startedAt: processStartedAt,
+        endedAt,
+        preset,
+        platform,
+        userId,
+        sessionId: this.monitor?.getSessionId() ?? null,
+      });
+      await safelyEmit(this.telemetry, span, (err) => this.log("telemetry emit failed", err));
+    }
+
+    return result;
   }
 
   /**

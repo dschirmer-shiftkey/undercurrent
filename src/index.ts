@@ -225,6 +225,7 @@ export class Slipstream {
 }
 
 export { Pipeline, recommendTier } from "./engine/pipeline.js";
+export { buildEnrichSpan, buildProcessSpan, safelyEmit } from "./engine/telemetry.js";
 export { SessionTierBiasLearner } from "./engine/tier-bias-learner.js";
 export type {
   TierBiasLearner,
@@ -312,6 +313,10 @@ export type {
   HealthStatus,
   HealthCheckResult,
   AdapterHealth,
+  TelemetryEmitter,
+  TelemetrySpan,
+  TelemetrySpanEvent,
+  TelemetrySpanStatus,
   TaskDomain,
   TargetPlatform,
   SlipstreamConfig,
