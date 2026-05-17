@@ -169,7 +169,7 @@ function composeMcp(input: ComposeInput): string {
   parts.push(input.message);
   parts.push("");
   parts.push("---");
-  parts.push("Undercurrent Context:");
+  parts.push("Slipstream Context:");
 
   for (const layer of input.context) {
     parts.push(`  [${layer.source}] ${layer.summary}`);

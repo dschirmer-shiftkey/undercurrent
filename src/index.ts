@@ -8,6 +8,7 @@ import type {
   EnrichedPrompt,
   EnrichmentStrategy,
   GovernancePreset,
+  HealthCheckResult,
   MemoryGovernancePolicy,
   PipelineHooks,
   ProcessResult,
@@ -15,7 +16,7 @@ import type {
   SuggestionFeedback,
   SuggestionInput,
   SuggestionResult,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "./types.js";
 
 export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovernancePolicy>> = {
@@ -82,10 +83,10 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
 };
 
 export function withPreset(
-  config: UndercurrentConfig,
+  config: SlipstreamConfig,
   preset: GovernancePreset,
   governanceOverrides?: Partial<MemoryGovernancePolicy>,
-): UndercurrentConfig {
+): SlipstreamConfig {
   return {
     ...config,
     preset,
@@ -97,12 +98,12 @@ export function withPreset(
   };
 }
 
-export class Undercurrent {
+export class Slipstream {
   private readonly pipeline: Pipeline;
-  private readonly config: UndercurrentConfig;
+  private readonly config: SlipstreamConfig;
   private readonly suggester: Suggester;
 
-  constructor(config: UndercurrentConfig) {
+  constructor(config: SlipstreamConfig) {
     this.config = config;
     this.pipeline = new Pipeline(config);
     this.suggester = new Suggester({
@@ -189,9 +190,50 @@ export class Undercurrent {
   get sessionId(): string | null {
     return this.pipeline.getSessionId();
   }
+
+  /**
+   * Lightweight pre-flight check for backend health. Calls each adapter's
+   * `available()` and, when a model router is configured, attempts a one-
+   * shot scoring-data load. Aggregates into a single `HealthCheckResult`
+   * the host can use to decide whether to enable Slipstream for this
+   * session.
+   *
+   * Total cost is bounded by the per-adapter timeout (defaults to the
+   * pipeline timeout). Failing checks never throw — they're reported as
+   * `status: "error"` in the per-adapter health entry.
+   */
+  async healthCheck(): Promise<HealthCheckResult> {
+    return this.pipeline.healthCheck();
+  }
+
+  /**
+   * Feed an accept/reject outcome back to the tier-bias learner so future
+   * `enrich()` calls can incorporate the per-user signal in
+   * `metadata.tierRecommendation`. No-op when no learner is configured.
+   *
+   * The IDE call site: after a user accepts or rejects an assistant turn,
+   * call this with the tier that was actually used.
+   */
+  recordTierOutcome(input: {
+    tier: import("./types.js").CostTier;
+    accepted: boolean;
+    userId?: string;
+    domain?: string;
+  }): void {
+    this.pipeline.recordTierOutcome(input);
+  }
 }
 
-export { Pipeline } from "./engine/pipeline.js";
+export { Pipeline, recommendTier } from "./engine/pipeline.js";
+export { buildEnrichSpan, buildProcessSpan, safelyEmit } from "./engine/telemetry.js";
+export { SessionTierBiasLearner } from "./engine/tier-bias-learner.js";
+export type {
+  TierBiasLearner,
+  TierBiasContext,
+  TierOutcomeInput,
+  TierBiasStats,
+  SessionTierBiasLearnerOptions,
+} from "./engine/tier-bias-learner.js";
 export type { EnrichInput } from "./engine/pipeline.js";
 export { SessionMonitor, estimateTokens } from "./engine/session-monitor.js";
 export { Compactor } from "./engine/compactor.js";
@@ -264,9 +306,20 @@ export type {
   CascadeRisk,
   CascadeRiskLevel,
   Correction,
+  CostTier,
+  TierRecommendation,
+  TierBiasLearnerInterface,
+  DegradationSummary,
+  HealthStatus,
+  HealthCheckResult,
+  AdapterHealth,
+  TelemetryEmitter,
+  TelemetrySpan,
+  TelemetrySpanEvent,
+  TelemetrySpanStatus,
   TaskDomain,
   TargetPlatform,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "./types.js";
 
 export type {

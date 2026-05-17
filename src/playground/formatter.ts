@@ -18,7 +18,7 @@ export function formatResult(result: EnrichedPrompt, verbose: boolean): string {
   const lines: string[] = [];
 
   lines.push("");
-  lines.push(c(BOLD + CYAN, "═══ Undercurrent Pipeline Output ═══"));
+  lines.push(c(BOLD + CYAN, "═══ Slipstream Pipeline Output ═══"));
   lines.push("");
 
   // Intent

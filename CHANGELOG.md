@@ -2,13 +2,156 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.4.0] - 2026-05-17
+
+### Added — OpenTelemetry-GenAI telemetry emitter
+
+- **`SlipstreamConfig.telemetry`** — optional `TelemetryEmitter` that receives an OTel-GenAI-shaped span per `enrich()` and `process()` call. Slipstream stays zero-dep; consumers bring their own backend (OTel SDK, Langfuse, Helicone, Arize Phoenix, console).
+- **`TelemetrySpan`** — span shape mirrors the [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Attributes use `gen_ai.*` where the convention applies (`gen_ai.system`, `gen_ai.operation.name`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.model`) and `slipstream.*` for Slipstream-specific signals (`slipstream.tier_recommended`, `slipstream.tier_bias_applied`, `slipstream.degraded`, `slipstream.preflight_cascade_risk`, etc.).
+- **Per-adapter `adapter.completed` events** within each span — surfaces per-adapter status (`ok` / `empty` / `unavailable` / `error`) and layer count, so consumers can build per-adapter latency histograms.
+- **`buildEnrichSpan(args)` / `buildProcessSpan(args)`** exported helpers — pure functions that map Slipstream metadata to a `TelemetrySpan`. Useful for callers that want to construct spans outside the pipeline (e.g., manual instrumentation around custom flows).
+- **`safelyEmit(emitter, span)`** helper — wraps emitter calls so a throwing emitter never breaks the enrichment path.
+- New exported types: `TelemetryEmitter`, `TelemetrySpan`, `TelemetrySpanEvent`, `TelemetrySpanStatus`.
+
+### Why
+
+Today the IDE (and any consumer) has to either build a custom telemetry pipeline against Slipstream's `metadata` shape or skip per-session/per-user observability entirely. With this PR, a 10-line emitter implementation pushes standards-compliant spans to whatever backend the team uses. No custom schema, no per-backend adapter to write.
+
+### Two spans per `process()` (by design)
+
+- `slipstream.enrich` — emitted at the end of `enrich()`. Cost, governance, tier recommendation, per-adapter events.
+- `slipstream.process` — emitted at the end of `process()`. Same enrichment attributes PLUS model-routing details (`gen_ai.response.model`, `slipstream.model_latency_ms`, `slipstream.model_recommendation_confidence`).
+
+Both share `slipstream.enrichment_id` so consumers can correlate. Consumers who want only one can filter by `span.name` in their emitter.
+
+## [2.3.0] - 2026-05-17
+
+### Added — Cold-start learning for `tierRecommendation`
+
+- **`SessionTierBiasLearner`** — in-memory implementation of the new `TierBiasLearner` interface. Tracks per-user, per-tier acceptance and adjusts `metadata.tierRecommendation` based on observed signal. Pure heuristic recommendation stays the default; the learner is opt-in via `SlipstreamConfig.tierBiasLearner`.
+- **`SlipstreamConfig.tierBiasLearner`** — plug a learner instance to enable per-user adjustment.
+- **`Slipstream.recordTierOutcome({ tier, accepted, userId?, domain? })`** — IDE call site: after the user accepts or rejects a turn, feed the outcome back. No-op when no learner is configured.
+- **`TierRecommendation.biasAdjustment`** (new optional field) — present when a learner adjusted the heuristic recommendation. Contains `{ originalTier, appliedReason, observedAcceptance }`. Lets telemetry distinguish "Slipstream picked premium because intent looked complex" from "Slipstream picked premium because user historically accepted premium more often."
+- New exported types: `TierBiasLearner`, `TierBiasContext`, `TierOutcomeInput`, `TierBiasStats`, `SessionTierBiasLearnerOptions`, `TierBiasLearnerInterface`.
+
+### Adjustment policy (conservative by default)
+
+The default `SessionTierBiasLearner` only adjusts when the data warrants:
+
+1. **Cold start** (below 5 outcomes/tier): no adjustment, recommendation = pure heuristic
+2. **Low acceptance** for the recommended tier (<30%) AND another tier with high acceptance (>70%): **flip** to the better tier, confidence reflects the alternative's observed rate
+3. **Mid-range** observed acceptance (30-70%): **soften** confidence by `midRangeConfidencePenalty` (default 0.7), keep the tier
+4. **High** observed acceptance (>70%) for the recommended tier: **boost** confidence by +0.1, keep the tier
+
+Thresholds and the scoring penalty are configurable.
+
+### Scoping
+
+- Default `perUserScoping: true` — stats partition by `enrichmentContext.userId` (the same key the Komatik IDE already passes through `undercurrentEnricher.ts`).
+- `perUserScoping: false` for global stats (rare — useful for shared experimental environments).
+
+### Cross-session persistence (deferred)
+
+The current Komatik `enrichment_outcomes` schema doesn't store `tier`, so cross-session learning isn't fully wired yet. The in-memory `SessionTierBiasLearner` becomes per-user-per-session because the Komatik IDE already caches one Slipstream instance per user. True cross-session requires a `tier` column on `enrichment_outcomes` plus a `KomatikTierBiasLearner` that reads it back at startup — both Komatik-side follow-ups.
+
+## [2.2.0] - 2026-05-17
+
+### Added — Graceful degradation when Komatik backend is unavailable
+
+- **`Slipstream.healthCheck()`** — lightweight pre-flight check returning `{ status: 'healthy' | 'degraded' | 'unavailable', adapters: AdapterHealth[], modelRouter?, checkedAt, totalLatencyMs }`. Lets the host (Komatik IDE) detect backend state without running a full enrichment. Never throws — adapter failures are reported as `error` entries.
+- **`SlipstreamConfig.failureMode`** — `'degraded'` (default) records adapter errors in `metadata.degradation` but never throws; `'strict'` propagates the first adapter failure. Use degraded for production IDE flows so a Supabase hiccup doesn't kill the chat.
+- **`SlipstreamConfig.adapterTimeoutMs`** — per-adapter timeout. Prevents one slow remote-backed adapter from eating the whole pipeline budget. Falls back to `timeoutMs`.
+- **`metadata.degradation`** on `enrich()` — `{ failedAdapters, timedOutAdapters, noContextHarvested, modelRouterDegraded?, failedAdapterNames[] }`. Absent when everything succeeded, present when one or more adapters errored or the model router fell back. Lets hosts detect partial Supabase outages without walking the full `adapterResults` map.
+- New exported types: `DegradationSummary`, `HealthStatus`, `HealthCheckResult`, `AdapterHealth`.
+
+### Changed
+
+- `Slipstream.process()` is now defensive against `KomatikModelUsageAdapter.loadScoringData()` failure. When scoring data load throws, the router falls back to its static affinity defaults instead of propagating the error. The host sees `metadata.degradation.modelRouterDegraded === true`. (In `strict` mode this still throws.)
+- Adapter `gather()` calls now use the per-adapter `adapterTimeoutMs` budget (defaults to `timeoutMs`).
+
+### Why
+
+Today's failure mode: if Supabase hiccups, `Slipstream.enrich()` can throw mid-adapter and the IDE chat endpoint returns an error. The IDE's `maybeEnrich` catches it and falls back to the original message, so the user gets a response — but loses all enrichment. With degraded mode, partial backend failure produces partial enrichment instead of total failure: the working adapters (`ConversationAdapter`, etc.) still contribute, and the host gets a clear signal in `metadata.degradation` that some adapters didn't run.
+
+## [2.1.0] - 2026-05-17
+
+### Added
+
+- **`enrich().metadata.tierRecommendation`** — per-message tier recommendation (`budget` / `balanced` / `premium`) derived from intent + scope + emotional load + enrichment depth. Names match Komatik's `CostTier` verbatim so the Komatik IDE can drop it straight into `getModelConfigForPhase(phase, tier)`. Includes `{ tier, confidence, reasoning, signals }`. Pure heuristic, deterministic, no LLM.
+- `CostTier` and `TierRecommendation` types exported from `@komatik/slipstream`.
+- `recommendTier(intent, depth)` helper exported for callers that want to compute a recommendation outside the pipeline.
+- `KomatikPreferenceClient` now exposes the **full `UndercurrentSettings`** schema matching the live IDE (`enabled`, `enrichmentDepth`, `strategy`, `showEnrichmentDetails`, new `autoTier`, new `defaultTier`). Replaces the old `getTierBias` / `setTierBias` methods which used a fabricated key name.
+- `runTierRecommendationHarness` — methodology harness comparing user-picked-tier strategies against `slipstream-recommended`, with the host's tier→model mapping held constant. Replaces the unmerged `runAcceptanceHarness` which compared the wrong dimensions.
+- README "Komatik IDE integration" section documenting the actual integration shape.
+
+### Changed
+
+- `TierBias` is now an alias for `CostTier`, fixing a transcription error where the documented value `"premier"` was actually `"premium"` in the Komatik schema. Old `"premier"` literals will no longer typecheck. Stored values are sanitized at read time.
+- `KomatikPreferenceClient` read path now sanitizes against the real key schema — invalid stored values (e.g., a legacy `"premier"` literal in a `defaultTier` slot) silently fall back to defaults rather than propagating to callers.
+
+### Deprecated
+
+- **`SlipstreamSessionManager`** — built for an integration shape the live Komatik IDE doesn't need. The IDE already owns session lifecycle, model selection, telemetry, and memory. Remains exported for non-IDE consumers; will be removed in v3 unless one surfaces. For Komatik IDE wiring, use `slipstream.enrich()` + `metadata.tierRecommendation` directly. See README.
+- **`TIER_WEIGHT_PRESETS`** — the `{ successRate, acceptanceRate, latency, affinity }` weighting scheme does not match how Komatik's router actually picks models (cost ceilings + quality floors). Only useful when `SlipstreamSessionManager` is wired as a standalone router. Will be removed with the manager in v3.
+
+### Fixed
+
+- Tier name transcription: `"premier"` → `"premium"` throughout (alias preserved for read-time sanitization).
+- `KomatikPreferenceClient.updateUndercurrentSettings` preserves other JSON-bag keys (forward-compat with IDE-only settings).
+
+## [2.0.0] - 2026-05-17
+
+### BREAKING
+
+- Renamed `Undercurrent` → `Slipstream` throughout. The package has been `@komatik/slipstream` since launch; the class and identity now match.
+  - Class: `Undercurrent` → `Slipstream`
+  - Config type: `UndercurrentConfig` → `SlipstreamConfig`
+  - MCP factory: `createUndercurrentMcpServer` → `createSlipstreamMcpServer`
+  - MCP server identity (handshake): `name: "undercurrent"` → `name: "slipstream"`
+  - npm bin: `undercurrent-mcp` → `slipstream-mcp`
+  - Express middleware property: `req.undercurrent` → `req.slipstream`
+  - Preserved: `undercurrent_settings` Komatik Supabase column (renaming would break the integration).
+
+### Added
+
+#### Context Reliability System foundations (PRs #56, #57)
+- Governance presets: `strict-governance`, `balanced`, `speed-first` (plus `safety-first` from 1.0.0)
+- Stale-context filtering, confidence gates, bounded assumptions per message
+- Stage-by-stage `EnrichmentTrace` events and `GovernanceSummary.interventions` in metadata
+- Replay-harness benchmarking: quality-per-token, governed vs unguided reliability metrics
+- MCP `enrich` accepts preset override and returns trace + governance metadata
+
+#### Production pilot path (PRs #60, #61, #69)
+- `KomatikPilotProcessor` wrapping `Slipstream.process()` with per-request ROI telemetry (latency split, token efficiency, governance interventions, blocked assumptions) and acceptance outcome tracking
+- MCP pilot tools: `process_with_pilot`, `record_pilot_outcome`, `get_pilot_roi_summary`
+- `runPilotSimulation()` end-to-end harness in `@komatik/slipstream/komatik` — wires Slipstream → `KomatikPilotProcessor` → `KomatikOutcomeWriter` with mock clients and stub caller for local iteration before porting to real products
+- CLI: `npm run playground:pilot -- --transcript X [--preset safety-first --verbose]`
+- Exposes `PilotSimulationOptions`, `PilotSimulationResult`, `PilotSimulationMessage` types
+
+#### CI reliability gate matrix (PRs #60, #68, #69)
+- `npm run eval:reliability` runs a (fixture × preset) matrix from `ci/reliability-matrix.json` with per-cell baselines and thresholds
+- 7 default cells covering `balanced` / `safety-first` / `strict-governance` presets across `reliability-ci`, `preflight-stress`, and `governance-stress` fixtures
+- New metrics target preflight regressions: `blockingClarificationRate` and `highCascadeRiskRate`
+- `npm run eval:reliability:single` preserves the single-cell mode; `npm run eval:reliability:update` regenerates baselines
+- New fixtures `fixtures/replay/preflight-stress.jsonl` and `fixtures/replay/governance-stress.jsonl`
+
+### Changed
+
+- **Safety-first preflight** (PR #67): tokenized negation detection and content-significance guards in the contradiction detector. Previously, substring matching on `"no"` / `"not"` / `"never"` fired false-positive contradictions on benign messages containing words like `node`, `notion`, `now`, `notes`. Combined with a 40%-overlap threshold over `Math.min(a, b)` that fired on a single shared word against small recent-decision sets, this produced 683 of the 783 blocking clarifications observed during 1.0.0 validation. The fix requires ≥3 content words on both sides and ≥2 shared words before computing the overlap ratio. Negation detection now tokenizes and checks set membership (including the multi-token `do not` and contractions like `cannot`/`cant`/`won't`/`shouldn't`).
+- **Reliability gate determinism** (PR #69): the matrix gate now uses `ConversationAdapter` only. Previously the `Git` and `Filesystem` adapters made the gate sensitive to repo state (any new file shifted token counts), masking real strategy/preset/preflight regressions. Restricting the gate to deterministic-by-transcript adapters surfaces the regressions it was designed to catch. Secondary effect: `strict-governance` now actually shows distinct metrics from `balanced` (1.2 interventions/msg, 100% blocked-assumption rate on governance-stress); previously that signal was hidden by adapter noise.
+
+### Fixed
+
+- ReDoS code-scanning alerts in parsing heuristics (PR #58)
+- Scanner-based parsing regression coverage to lock in the ReDoS fixes (PR #59)
+
 ## [1.0.0] - 2026-05-16
 
 ### Added
 
 - Closed enrichment feedback loop persistence:
   - `KomatikOutcomeWriter` for writing `enrichment_outcomes` telemetry rows and verdict updates
-  - `Undercurrent.recordVerdict()` API for linking user feedback to `metadata.enrichmentId`
+  - `Slipstream.recordVerdict()` API for linking user feedback to `metadata.enrichmentId`
   - `OutcomeWriter`/`OutcomeWriterConfig` protocol types
 - `EnrichmentMetadata.enrichmentId` on every enrichment result for stable verdict linkage.
 - Safety-first preflight interception layer:
@@ -54,8 +197,8 @@ All notable changes to this project will be documented in this file.
 - Drift+age compaction trigger in `SessionMonitor` — 3+ topic shifts AND >30min elapsed → `degrading` health even below the 65% token threshold
 
 #### Follow-up suggestions (PR #32)
-- `Undercurrent.suggestFollowups()` — experimental post-response reflection; given the user's message and the agent's response, returns 3-5 auto-complete prompt suggestions categorized as `continue` / `amend` / `stop`
-- `Undercurrent.recordSuggestionFeedback()` — logs `accepted` / `dismissed` / `edited` outcomes back to `enrichment_outcomes` for the scoring loop
+- `Slipstream.suggestFollowups()` — experimental post-response reflection; given the user's message and the agent's response, returns 3-5 auto-complete prompt suggestions categorized as `continue` / `amend` / `stop`
+- `Slipstream.recordSuggestionFeedback()` — logs `accepted` / `dismissed` / `edited` outcomes back to `enrichment_outcomes` for the scoring loop
 - `suggest_followups` and `record_suggestion_feedback` MCP tools
 
 ### Changed
@@ -113,7 +256,7 @@ All notable changes to this project will be documented in this file.
   - `TaskDomainClassifier` maps intent to 6 domains (coding, creative, analysis, planning, debugging, conversation)
   - `ModelScorer` ranks models by success rate, acceptance rate, latency, and affinity
   - `KomatikModelUsageAdapter` queries `model_availability`, `llm_usage`, `enrichment_outcomes`
-  - `Undercurrent.process()` = enrich + classify + score + call via pluggable `ModelCallerFn`
+  - `Slipstream.process()` = enrich + classify + score + call via pluggable `ModelCallerFn`
 - Live pipeline test harness (`npm run playground`, `npm run replay`)
 - Platform-aware composition for Cursor, Claude, ChatGPT, API, MCP, and generic targets
 - Graduated scope calibration — multi-signal scoring replaces binary passthrough

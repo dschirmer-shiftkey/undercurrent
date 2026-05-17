@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { Undercurrent } from "../index.js";
+import { Slipstream } from "../index.js";
 import { ConversationAdapter } from "../adapters/conversation.js";
 import { GitAdapter } from "../adapters/git.js";
 import { FilesystemAdapter } from "../adapters/filesystem.js";
@@ -14,8 +14,8 @@ let platform: TargetPlatform = "generic";
 let verbose = false;
 let conversation: ConversationTurn[] = [];
 
-function createPipeline(debug: boolean): Undercurrent {
-  return new Undercurrent({
+function createPipeline(debug: boolean): Slipstream {
+  return new Slipstream({
     adapters: [
       new ConversationAdapter(),
       new GitAdapter({ cwd: process.cwd() }),
@@ -31,7 +31,7 @@ let uc = createPipeline(false);
 
 function printHelp(): void {
   console.log(`
-\x1b[1mUndercurrent Playground\x1b[0m
+\x1b[1mSlipstream Playground\x1b[0m
 
 Commands:
   /platform <name>   Switch output platform (${PLATFORMS.join(", ")})
@@ -49,7 +49,7 @@ Type any message to run it through the pipeline.
 function printBanner(): void {
   console.log(`
 \x1b[1m\x1b[36m╔══════════════════════════════════════╗
-║   Undercurrent Playground            ║
+║   Slipstream Playground            ║
 ║   Type messages to see enrichment    ║
 ║   /help for commands                 ║
 ╚══════════════════════════════════════╝\x1b[0m

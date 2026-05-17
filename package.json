@@ -1,6 +1,6 @@
 {
   "name": "@komatik/slipstream",
-  "version": "1.0.0",
+  "version": "2.4.0",
   "description": "Context engineering and personalization SDK for AI — invisibly transforms vague human messages into structured, context-rich prompts before the model sees them.",
   "type": "module",
   "main": "./dist/index.js",
@@ -49,7 +49,7 @@
     }
   },
   "bin": {
-    "undercurrent-mcp": "dist/mcp/index.js"
+    "slipstream-mcp": "dist/mcp/index.js"
   },
   "publishConfig": {
     "access": "public"
@@ -68,8 +68,13 @@
     "prepublishOnly": "npm run build",
     "start:mcp": "node dist/mcp/index.js",
     "playground": "tsx src/playground/repl.ts",
+    "playground:pilot": "tsx src/playground/pilot.ts",
+    "playground:drift": "tsx src/playground/drift.ts",
+    "playground:session": "tsx src/playground/session-manager-demo.ts",
     "replay": "tsx src/playground/replay.ts",
-    "eval:reliability": "tsx src/playground/reliability-gate.ts --baseline ci/reliability-baseline.json --transcript fixtures/replay/reliability-ci.jsonl --platform generic"
+    "eval:reliability": "tsx src/playground/reliability-gate.ts --matrix ci/reliability-matrix.json",
+    "eval:reliability:single": "tsx src/playground/reliability-gate.ts --baseline ci/reliability-baseline.json --transcript fixtures/replay/reliability-ci.jsonl --platform generic",
+    "eval:reliability:update": "tsx src/playground/reliability-gate.ts --matrix ci/reliability-matrix.json --write"
   },
   "keywords": [
     "ai",

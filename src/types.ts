@@ -149,6 +149,102 @@ export interface EnrichmentMetadata {
   governance?: GovernanceSummary;
   preflight?: PreflightResult;
   trace?: EnrichmentTrace;
+  /**
+   * Tier recommendation for the *downstream model router*. Informational —
+   * the host (e.g., Komatik IDE's workspace-agent) decides whether to honor
+   * it. Maps directly to Komatik's `CostTier` so a consumer can drop it into
+   * `getModelConfigForPhase(phase, suggestedTier.tier)` without translation.
+   */
+  tierRecommendation?: TierRecommendation;
+  /**
+   * Backend degradation summary. Present when one or more adapters errored
+   * or the model router fell back to defaults; absent when everything
+   * succeeded normally. Lets hosts (the Komatik IDE) detect partial
+   * Supabase outages without walking the full `adapterResults` map.
+   */
+  degradation?: DegradationSummary;
+}
+
+export interface DegradationSummary {
+  /** Number of adapters that errored this enrichment. */
+  failedAdapters: number;
+  /** Subset of failedAdapters that failed specifically with a timeout. */
+  timedOutAdapters: number;
+  /** True when zero context was harvested from any adapter (full backend silence). */
+  noContextHarvested: boolean;
+  /** True when the model router fell back to defaults due to scoring-data load failure. */
+  modelRouterDegraded?: boolean;
+  /** Adapter names that errored, sorted by name for stable output. */
+  failedAdapterNames: string[];
+}
+
+// ─── Health Check ──────────────────────────────────────────────────────────
+// Lightweight pre-flight check the host can call to detect backend state
+// without running a full enrichment. Useful for "Slipstream is down" status
+// badges in the IDE.
+
+export type HealthStatus = "healthy" | "degraded" | "unavailable";
+
+export interface AdapterHealth {
+  name: string;
+  status: "ok" | "unavailable" | "error";
+  latencyMs: number;
+  error?: string;
+}
+
+export interface HealthCheckResult {
+  /**
+   * Aggregate health:
+   *   - "healthy"    — all adapters available and the model router (if configured) responded
+   *   - "degraded"   — some adapters failed or the model router fell back, but enrichment is usable
+   *   - "unavailable" — zero adapters available (Slipstream cannot enrich)
+   */
+  status: HealthStatus;
+  adapters: AdapterHealth[];
+  modelRouter?: { status: "ok" | "unavailable" | "error"; latencyMs: number; error?: string };
+  checkedAt: number;
+  /** Total time spent on the health check (caps at pipeline timeout). */
+  totalLatencyMs: number;
+}
+
+// ─── Cost Tier Recommendation ──────────────────────────────────────────────
+// Slipstream does not own model selection — the host's router does. What
+// Slipstream provides is a per-message *recommended tier* based on intent,
+// scope, and emotional load. Names match Komatik's CostTier verbatim so the
+// host can pass it through with no translation.
+
+export type CostTier = "budget" | "balanced" | "premium";
+
+export interface TierRecommendation {
+  /** Suggested cost tier for the host's router. */
+  tier: CostTier;
+  /** 0-1 confidence in this recommendation. Low confidence = host should prefer user pick. */
+  confidence: number;
+  /** Plain-English reasoning so the host can surface "Slipstream chose Premium because…" */
+  reasoning: string;
+  /** Signals that drove the choice — useful for telemetry / debugging. */
+  signals: {
+    action: Action;
+    specificity: Specificity;
+    scope: Scope;
+    emotionalLoad: EmotionalLoad;
+    enrichmentDepth: EnrichmentMetadata["enrichmentDepth"];
+  };
+  /**
+   * Present when a `TierBiasLearner` adjusted the heuristic recommendation
+   * based on observed acceptance signal. Absent on the raw heuristic path.
+   * Lets hosts / telemetry distinguish "Slipstream picked premium because
+   * intent looked complex" from "Slipstream picked premium because user
+   * historically accepted premium more often."
+   */
+  biasAdjustment?: {
+    /** What the heuristic recommended before the learner adjusted. */
+    originalTier: CostTier;
+    /** Which adjustment policy fired (low-acceptance-flip / mid-range-confidence-penalty / high-acceptance-boost). */
+    appliedReason: string;
+    /** Observed acceptance rates per tier (only tiers with data are present). */
+    observedAcceptance: Partial<Record<CostTier, number>>;
+  };
 }
 
 /**
@@ -250,7 +346,7 @@ export interface EnrichmentTrace {
 }
 
 // ─── Platform Targeting ─────────────────────────────────────────────────────
-// Undercurrent tailors its enriched output to the target platform. Each
+// Slipstream tailors its enriched output to the target platform. Each
 // platform consumes context differently and benefits from different formats.
 
 export type TargetPlatform = "cursor" | "claude" | "chatgpt" | "api" | "mcp" | "generic";
@@ -284,14 +380,90 @@ export interface ObservabilityConfig {
   maxTraceEvents?: number;
 }
 
+// ─── Telemetry Emission ────────────────────────────────────────────────────
+// Standards-compliant span emission for production observability. The shape
+// mirrors OpenTelemetry GenAI semantic conventions
+// (https://opentelemetry.io/docs/specs/semconv/gen-ai/) so consumers can
+// pipe to Langfuse, Helicone, Arize Phoenix, or any OTel backend with a
+// thin adapter. Slipstream stays zero-dep — we define the contract,
+// callers bring the SDK.
+
+/**
+ * Status of a completed span. Mirrors OTel `Status` (UNSET | OK | ERROR)
+ * but collapsed to a 2-state boolean — Slipstream doesn't emit UNSET.
+ */
+export type TelemetrySpanStatus = "ok" | "error";
+
+/**
+ * A finished span ready to ship to an OTel backend. Attribute keys follow
+ * OTel GenAI conventions where applicable (e.g., `gen_ai.system`,
+ * `gen_ai.operation.name`, `gen_ai.usage.input_tokens`). Slipstream-
+ * specific attributes use the `slipstream.*` namespace.
+ *
+ * Values are primitive (string | number | boolean) so they serialize
+ * directly to any OTel exporter.
+ */
+export interface TelemetrySpan {
+  /** Span name. e.g. `"slipstream.enrich"`, `"slipstream.process"`. */
+  name: string;
+  /** Unix ms when the operation started. */
+  startedAt: number;
+  /** Unix ms when the operation ended. */
+  endedAt: number;
+  /** Convenience: `endedAt - startedAt`. */
+  durationMs: number;
+  /** OTel attribute map. Keys follow GenAI conventions; values are primitive. */
+  attributes: Record<string, string | number | boolean>;
+  /** Optional inner events (e.g., per-adapter completion, governance interventions). */
+  events?: TelemetrySpanEvent[];
+  /** Span status. `error` when the operation threw; `ok` otherwise. */
+  status: TelemetrySpanStatus;
+  /** Populated when status === "error". */
+  error?: { message: string; type?: string };
+}
+
+export interface TelemetrySpanEvent {
+  /** Event name (e.g., `"adapter.completed"`, `"governance.intervention"`). */
+  name: string;
+  /** Unix ms when the event fired. */
+  at: number;
+  attributes?: Record<string, string | number | boolean>;
+}
+
+/**
+ * Plug-in contract for telemetry emission. Implementations push the span
+ * to their backend (OTel SDK, Langfuse, Helicone, custom HTTP, console).
+ * Should never throw — Slipstream wraps calls but errors here would mask
+ * actual enrichment behavior in metadata.
+ */
+export interface TelemetryEmitter {
+  emit(span: TelemetrySpan): void | Promise<void>;
+}
+
 // ─── Pipeline Configuration ─────────────────────────────────────────────────
 
-export interface UndercurrentConfig {
+export interface SlipstreamConfig {
   adapters: ContextAdapter[];
   strategy: EnrichmentStrategy;
   maxClarifications?: number;
   assumptionConfidenceThreshold?: number;
+  /** Pipeline-wide stage timeout (intent, gather, analyze, compose). Default 10_000ms. */
   timeoutMs?: number;
+  /**
+   * Per-adapter `gather()` timeout. When a remote-backed adapter is slow,
+   * this caps the per-adapter cost so it doesn't eat the whole pipeline
+   * budget. Defaults to `timeoutMs`.
+   */
+  adapterTimeoutMs?: number;
+  /**
+   * How to handle adapter / backend failures:
+   *   - "degraded" (default): adapter errors are recorded in
+   *     `metadata.adapterResults` and `metadata.degradation`, but never
+   *     throw. Pipeline continues with whatever context succeeded.
+   *   - "strict": adapter errors propagate. Use when downstream consumers
+   *     depend on specific context being present.
+   */
+  failureMode?: "degraded" | "strict";
   targetPlatform?: TargetPlatform;
   preset?: GovernancePreset;
   governance?: Partial<MemoryGovernancePolicy>;
@@ -303,6 +475,28 @@ export interface UndercurrentConfig {
   suggestions?: SuggestionsConfig;
   /** When set, every enrichment auto-persists a telemetry row to enrichment_outcomes. */
   outcomeWriter?: OutcomeWriterConfig;
+  /**
+   * Optional tier-bias learner that adjusts `metadata.tierRecommendation`
+   * based on observed per-user / per-tier acceptance. When omitted, the
+   * recommendation is the pure heuristic from `recommendTier()`. Pair with
+   * `Slipstream.recordTierOutcome()` to feed acceptance signal back.
+   */
+  tierBiasLearner?: TierBiasLearnerInterface;
+  /**
+   * Optional telemetry emitter. When set, every `enrich()` and `process()`
+   * call produces an OTel-GenAI-compliant `TelemetrySpan` for the emitter.
+   * Slipstream ships zero deps — the consumer's emitter implementation
+   * decides where the span goes (OTel SDK, Langfuse, Helicone, console).
+   */
+  telemetry?: TelemetryEmitter;
+}
+
+// Forward declaration so SlipstreamConfig can reference the learner type
+// without pulling the implementation into this file.
+export interface TierBiasLearnerInterface {
+  adjust(base: TierRecommendation, ctx: { userId?: string; domain?: string }): TierRecommendation;
+  recordOutcome(input: { tier: CostTier; accepted: boolean; userId?: string; domain?: string }): void;
+  getStats(ctx?: { userId?: string; domain?: string }): unknown;
 }
 
 export interface OutcomeWriterConfig {
@@ -586,9 +780,9 @@ export interface ProcessResult {
 
 // ─── Follow-up Suggestions ──────────────────────────────────────────────────
 // Post-response reflection stage. After the agent produces a response,
-// Undercurrent analyzes it against session context and emits auto-complete
+// Slipstream analyzes it against session context and emits auto-complete
 // prompts that render under the user's text input. Categorized as
-// continue / amend / stop. Experimental, opt-in via UndercurrentConfig.suggestions.
+// continue / amend / stop. Experimental, opt-in via SlipstreamConfig.suggestions.
 
 export type FollowupCategory = "continue" | "amend" | "stop";
 

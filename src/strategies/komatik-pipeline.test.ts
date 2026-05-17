@@ -450,7 +450,7 @@ describe("KomatikPipelineStrategy", () => {
 
       const [prompt, systemPrompt] = llmCall.mock.calls[0] as [string, string];
       expect(prompt).toContain("Build an online store");
-      expect(systemPrompt).toContain("Undercurrent");
+      expect(systemPrompt).toContain("Slipstream");
     });
 
     it("includes Yggdrasil context in LLM system prompt", async () => {

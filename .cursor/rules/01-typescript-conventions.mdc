@@ -1,5 +1,5 @@
 ---
-description: TypeScript conventions for Undercurrent SDK
+description: TypeScript conventions for Slipstream SDK
 globs: "**/*.ts"
 alwaysApply: false
 ---
