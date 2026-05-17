@@ -15,6 +15,18 @@ export type {
   PilotSimulationResult,
   PilotSimulationMessage,
 } from "./pilot-simulator.js";
+export { SlipstreamSessionManager, TIER_WEIGHT_PRESETS } from "./session-manager.js";
+export type {
+  TierBias,
+  SessionScope,
+  SessionStartInput,
+  SessionHandle,
+  ProcessInput,
+  ProcessOutput,
+  RecordOutcomeInput,
+  SessionEvent,
+  SessionManagerConfig,
+} from "./session-manager.js";
 export type { KomatikModelUsageAdapterOptions } from "./model-usage-adapter.js";
 export { createMockClient, createMockWriteClient } from "./testing.js";
 export type { MockWriteLog } from "./testing.js";
