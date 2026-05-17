@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Undercurrent } from "../index.js";
+import { Slipstream } from "../index.js";
 import { ConversationAdapter } from "../adapters/conversation.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import type {
@@ -18,7 +18,7 @@ import type { MockWriteLog } from "./testing.js";
 import type { KomatikDataClient, KomatikWriteClient } from "./client.js";
 
 /**
- * End-to-end harness that wires Undercurrent → KomatikPilotProcessor → OutcomeWriter
+ * End-to-end harness that wires Slipstream → KomatikPilotProcessor → OutcomeWriter
  * with mock clients and a stub model caller. Used to validate the consumer-side
  * integration pattern before porting to real Komatik products.
  *
@@ -131,7 +131,7 @@ export async function runPilotSimulation(
   const caller = options.caller ?? defaultCaller();
   const verdictRule = options.verdictRule ?? defaultVerdictRule;
 
-  const undercurrent = new Undercurrent({
+  const slipstream = new Slipstream({
     adapters: [new ConversationAdapter()],
     strategy: new DefaultStrategy(),
     preset: options.preset,
@@ -150,7 +150,7 @@ export async function runPilotSimulation(
   const outcomes: PilotOutcome[] = [];
   const enrichments: EnrichedPrompt[] = [];
 
-  const pilot = new KomatikPilotProcessor(undercurrent, {
+  const pilot = new KomatikPilotProcessor(slipstream, {
     sink: {
       onProcessTelemetry: (e) => {
         events.push(e);

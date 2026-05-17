@@ -288,7 +288,7 @@ export interface ModelAvailability {
   metadata: Record<string, unknown>;
 }
 
-// ─── user_preferences (new table for Undercurrent internal track) ────────────
+// ─── user_preferences (new table for Slipstream internal track) ────────────
 
 export type PreferenceTone = "formal" | "casual" | "terse" | "friendly";
 

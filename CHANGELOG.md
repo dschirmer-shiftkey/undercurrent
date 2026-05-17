@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Closed enrichment feedback loop persistence:
   - `KomatikOutcomeWriter` for writing `enrichment_outcomes` telemetry rows and verdict updates
-  - `Undercurrent.recordVerdict()` API for linking user feedback to `metadata.enrichmentId`
+  - `Slipstream.recordVerdict()` API for linking user feedback to `metadata.enrichmentId`
   - `OutcomeWriter`/`OutcomeWriterConfig` protocol types
 - `EnrichmentMetadata.enrichmentId` on every enrichment result for stable verdict linkage.
 - Safety-first preflight interception layer:
@@ -54,8 +54,8 @@ All notable changes to this project will be documented in this file.
 - Drift+age compaction trigger in `SessionMonitor` — 3+ topic shifts AND >30min elapsed → `degrading` health even below the 65% token threshold
 
 #### Follow-up suggestions (PR #32)
-- `Undercurrent.suggestFollowups()` — experimental post-response reflection; given the user's message and the agent's response, returns 3-5 auto-complete prompt suggestions categorized as `continue` / `amend` / `stop`
-- `Undercurrent.recordSuggestionFeedback()` — logs `accepted` / `dismissed` / `edited` outcomes back to `enrichment_outcomes` for the scoring loop
+- `Slipstream.suggestFollowups()` — experimental post-response reflection; given the user's message and the agent's response, returns 3-5 auto-complete prompt suggestions categorized as `continue` / `amend` / `stop`
+- `Slipstream.recordSuggestionFeedback()` — logs `accepted` / `dismissed` / `edited` outcomes back to `enrichment_outcomes` for the scoring loop
 - `suggest_followups` and `record_suggestion_feedback` MCP tools
 
 ### Changed
@@ -113,7 +113,7 @@ All notable changes to this project will be documented in this file.
   - `TaskDomainClassifier` maps intent to 6 domains (coding, creative, analysis, planning, debugging, conversation)
   - `ModelScorer` ranks models by success rate, acceptance rate, latency, and affinity
   - `KomatikModelUsageAdapter` queries `model_availability`, `llm_usage`, `enrichment_outcomes`
-  - `Undercurrent.process()` = enrich + classify + score + call via pluggable `ModelCallerFn`
+  - `Slipstream.process()` = enrich + classify + score + call via pluggable `ModelCallerFn`
 - Live pipeline test harness (`npm run playground`, `npm run replay`)
 - Platform-aware composition for Cursor, Claude, ChatGPT, API, MCP, and generic targets
 - Graduated scope calibration — multi-signal scoring replaces binary passthrough

@@ -15,7 +15,7 @@ import type {
   SuggestionFeedback,
   SuggestionInput,
   SuggestionResult,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "./types.js";
 
 export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovernancePolicy>> = {
@@ -82,10 +82,10 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
 };
 
 export function withPreset(
-  config: UndercurrentConfig,
+  config: SlipstreamConfig,
   preset: GovernancePreset,
   governanceOverrides?: Partial<MemoryGovernancePolicy>,
-): UndercurrentConfig {
+): SlipstreamConfig {
   return {
     ...config,
     preset,
@@ -97,12 +97,12 @@ export function withPreset(
   };
 }
 
-export class Undercurrent {
+export class Slipstream {
   private readonly pipeline: Pipeline;
-  private readonly config: UndercurrentConfig;
+  private readonly config: SlipstreamConfig;
   private readonly suggester: Suggester;
 
-  constructor(config: UndercurrentConfig) {
+  constructor(config: SlipstreamConfig) {
     this.config = config;
     this.pipeline = new Pipeline(config);
     this.suggester = new Suggester({
@@ -266,7 +266,7 @@ export type {
   Correction,
   TaskDomain,
   TargetPlatform,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "./types.js";
 
 export type {

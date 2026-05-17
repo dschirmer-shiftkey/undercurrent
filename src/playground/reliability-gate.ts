@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Undercurrent } from "../index.js";
+import { Slipstream } from "../index.js";
 import { ConversationAdapter } from "../adapters/conversation.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import { parseTranscript } from "./transcript-parser.js";
@@ -55,8 +55,8 @@ interface ReliabilityMatrix {
 // fails for the wrong reason). Restricting to ConversationAdapter makes the
 // gate deterministic w.r.t. transcript content and surfaces real strategy /
 // preset / preflight regressions.
-function createPipeline(platform: TargetPlatform): Undercurrent {
-  return new Undercurrent({
+function createPipeline(platform: TargetPlatform): Slipstream {
+  return new Slipstream({
     adapters: [new ConversationAdapter()],
     strategy: new DefaultStrategy(),
     targetPlatform: platform,
@@ -107,7 +107,7 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 async function computeMetrics(
-  pipeline: Undercurrent,
+  pipeline: Slipstream,
   transcripts: string[],
   platform: TargetPlatform,
   preset?: GovernancePreset,

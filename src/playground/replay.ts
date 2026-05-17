@@ -1,6 +1,6 @@
 import { resolve, basename, dirname } from "node:path";
 import { writeFile } from "node:fs/promises";
-import { Undercurrent } from "../index.js";
+import { Slipstream } from "../index.js";
 import { ConversationAdapter } from "../adapters/conversation.js";
 import { GitAdapter } from "../adapters/git.js";
 import { FilesystemAdapter } from "../adapters/filesystem.js";
@@ -48,8 +48,8 @@ interface AggregateStats {
   gapDescriptions: Record<string, number>;
 }
 
-function createPipeline(platform: TargetPlatform, preset?: GovernancePreset): Undercurrent {
-  return new Undercurrent({
+function createPipeline(platform: TargetPlatform, preset?: GovernancePreset): Slipstream {
+  return new Slipstream({
     adapters: [
       new ConversationAdapter(),
       new GitAdapter({ cwd: process.cwd() }),
@@ -63,7 +63,7 @@ function createPipeline(platform: TargetPlatform, preset?: GovernancePreset): Un
 
 async function replayTranscript(
   filePath: string,
-  uc: Undercurrent,
+  uc: Slipstream,
   platform: TargetPlatform,
   preset?: GovernancePreset,
 ): Promise<TranscriptReport> {
@@ -206,7 +206,7 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
   const DIM = "\x1b[2m";
   const RESET = "\x1b[0m";
 
-  console.log(`\n${BOLD}${CYAN}═══ Undercurrent Transcript Replay Report ═══${RESET}\n`);
+  console.log(`\n${BOLD}${CYAN}═══ Slipstream Transcript Replay Report ═══${RESET}\n`);
 
   for (const report of reports) {
     const name = basename(dirname(report.file));
@@ -369,7 +369,7 @@ async function main(): Promise<void> {
   if (filePaths.length === 0) {
     const transcriptDir = resolve(
       process.cwd(),
-      "../.cursor/projects/c-Users-david-Projects-undercurrent/agent-transcripts",
+      "../.cursor/projects/c-Users-david-Projects-slipstream/agent-transcripts",
     );
     try {
       const discovered = await discoverTranscripts(transcriptDir);

@@ -1,14 +1,14 @@
-# Undercurrent
+# Slipstream
 
 **A context engineering and personalization layer for AI.** Invisibly transforms vague human messages into structured, context-rich prompts — before the model ever sees them.
 
-Think of it as a translation device sitting between humans and AI: you speak naturally, Undercurrent fills in what you meant from your conversation, files, history, and preferences.
+Think of it as a translation device sitting between humans and AI: you speak naturally, Slipstream fills in what you meant from your conversation, files, history, and preferences.
 
-**Undercurrent is the container, not the contents.** It provides the enrichment pipeline, plugin architecture, and protocol. You bring your own context sources (adapters), enrichment logic (strategies), and integration method (transports).
+**Slipstream is the container, not the contents.** It provides the enrichment pipeline, plugin architecture, and protocol. You bring your own context sources (adapters), enrichment logic (strategies), and integration method (transports).
 
 ## The Problem
 
-Every human message to an AI system is a lossy compression of their actual intent. The human has a rich mental model — they express 10% of it. Current solutions either ask the human to write better prompts (they won't) or ask 20 clarifying questions (they hate that). Undercurrent takes a third path: silently enrich the message with inferred intent, harvested context, and transparent assumptions.
+Every human message to an AI system is a lossy compression of their actual intent. The human has a rich mental model — they express 10% of it. Current solutions either ask the human to write better prompts (they won't) or ask 20 clarifying questions (they hate that). Slipstream takes a third path: silently enrich the message with inferred intent, harvested context, and transparent assumptions.
 
 ## Context Reliability System (CRS)
 
@@ -24,11 +24,11 @@ This is designed to avoid the most common production failures in context systems
 ## Quick Start
 
 ```ts
-import { Undercurrent } from "@komatik/slipstream";
+import { Slipstream } from "@komatik/slipstream";
 import { ConversationAdapter, GitAdapter, FilesystemAdapter } from "@komatik/slipstream/adapters";
 import { DefaultStrategy } from "@komatik/slipstream/strategies";
 
-const uc = new Undercurrent({
+const uc = new Slipstream({
   adapters: [
     new ConversationAdapter(),
     new GitAdapter({ cwd: process.cwd() }),
@@ -76,7 +76,7 @@ console.log(result.enrichedMessage);
                     │       Your Application           │
                     │                                  │
   "fix the auth" → │  ┌────────────────────────────┐  │
-                    │  │       Undercurrent          │  │
+                    │  │       Slipstream          │  │
                     │  │                             │  │
                     │  │  ┌──────────────────────┐   │  │
                     │  │  │      Pipeline         │   │  │
@@ -206,7 +206,7 @@ const strategy = new LlmStrategy({
   heuristicConfidenceThreshold: 0.8, // skip LLM above this (default: 0.8)
 });
 
-const uc = new Undercurrent({ adapters, strategy });
+const uc = new Slipstream({ adapters, strategy });
 ```
 
 The `llmCall` callback receives a plain string prompt and must return a plain string response. No SDK dependency — you bring your own LLM gateway (OpenAI, Anthropic, Google, local model, etc.). JSON parsing is resilient: handles raw JSON, markdown-fenced code blocks, and embedded JSON in prose.
@@ -255,13 +255,13 @@ These outputs are intended to provide an ROI loop before changing pricing/packag
 
 ## Production pilot integration (`process`)
 
-For a real Komatik app path (Forge/Triage/Floe), use `KomatikPilotProcessor` to wrap `Undercurrent.process()` and emit ROI telemetry per request:
+For a real Komatik app path (Forge/Triage/Floe), use `KomatikPilotProcessor` to wrap `Slipstream.process()` and emit ROI telemetry per request:
 
 ```ts
-import { Undercurrent } from "@komatik/slipstream";
+import { Slipstream } from "@komatik/slipstream";
 import { KomatikPilotProcessor } from "@komatik/slipstream/komatik";
 
-const uc = new Undercurrent(configWithModelRouter);
+const uc = new Slipstream(configWithModelRouter);
 const pilot = new KomatikPilotProcessor(uc, {
   onProcessTelemetry: (event) => console.log("process telemetry", event),
   onOutcome: (event) => console.log("accept/reject", event),
@@ -285,7 +285,7 @@ Telemetry includes:
 
 ### Local pilot harness for iteration
 
-Before porting the pilot path to a real product, use `runPilotSimulation()` to wire the full chain (Undercurrent → KomatikPilotProcessor → outcome writer → ROI summary) with mock clients and a stub model caller. Replace `caller`, `client`, and `writeClient` with real implementations when porting.
+Before porting the pilot path to a real product, use `runPilotSimulation()` to wire the full chain (Slipstream → KomatikPilotProcessor → outcome writer → ROI summary) with mock clients and a stub model caller. Replace `caller`, `client`, and `writeClient` with real implementations when porting.
 
 ```ts
 import { runPilotSimulation } from "@komatik/slipstream/komatik";
@@ -313,10 +313,10 @@ npm run playground:pilot -- --transcript fixtures/replay/preflight-stress.jsonl 
 Use `KomatikOutcomeWriter` to persist every enrichment and later attach user verdicts (`accepted`/`rejected`/`revised`/`ignored`) to the same enrichment id:
 
 ```ts
-import { Undercurrent, KomatikOutcomeWriter } from "@komatik/slipstream";
+import { Slipstream, KomatikOutcomeWriter } from "@komatik/slipstream";
 
 const outcomeWriter = new KomatikOutcomeWriter(supabaseClient, userId);
-const uc = new Undercurrent({
+const uc = new Slipstream({
   adapters,
   strategy,
   outcomeWriter: {
@@ -360,7 +360,7 @@ npm run eval:reliability:update        # regenerates every cell in the matrix
 
 ### Platform-Aware Composition
 
-Undercurrent formats enriched output differently per target platform via the `targetPlatform` option:
+Slipstream formats enriched output differently per target platform via the `targetPlatform` option:
 
 
 | Platform  | Format                                                             | Use Case               |
@@ -382,7 +382,7 @@ const result = await uc.enrich({
 
 ### Transports
 
-How Undercurrent integrates with your stack:
+How Slipstream integrates with your stack:
 
 ```ts
 // Direct SDK
@@ -391,7 +391,7 @@ const result = await uc.enrich({ message: "..." });
 // Express/Connect middleware
 app.use(uc.middleware());
 app.post("/chat", (req, res) => {
-  const enriched = req.undercurrent; // EnrichedPrompt attached
+  const enriched = req.slipstream; // EnrichedPrompt attached
 });
 
 // Web Fetch API (Next.js, Hono, Cloudflare Workers, Deno)
@@ -403,10 +403,10 @@ export async function POST(request: Request) {
 
 ## External MCP Server
 
-Undercurrent ships an MCP server that exposes the enrichment pipeline and Komatik user context to external AI tools (Cursor, Claude, AntiGravity) via the stdio transport.
+Slipstream ships an MCP server that exposes the enrichment pipeline and Komatik user context to external AI tools (Cursor, Claude, AntiGravity) via the stdio transport.
 
 ```
-External Tool (Cursor/Claude) ←→ stdin/stdout JSON-RPC ←→ McpServer ←→ Undercurrent Pipeline
+External Tool (Cursor/Claude) ←→ stdin/stdout JSON-RPC ←→ McpServer ←→ Slipstream Pipeline
                                                                         ├── 7 Komatik Adapters
                                                                         └── PostgREST Client → Supabase
 ```
@@ -460,7 +460,7 @@ export KOMATIK_USER_ID="user-uuid"
 npm run start:mcp
 
 # Or directly
-npx undercurrent-mcp
+npx slipstream-mcp
 ```
 
 The PostgREST client uses native `fetch` against Supabase's REST API — no `@supabase/supabase-js` dependency required.
@@ -499,7 +499,7 @@ uc.setHooks({
 Full end-to-end wiring for a Komatik product (Triage, Floe, Forge, or the platform). This shows every subsystem connected — identity-aware adapters, LLM strategy, session lifecycle, and model routing:
 
 ```ts
-import { Undercurrent } from "@komatik/slipstream";
+import { Slipstream } from "@komatik/slipstream";
 import { ConversationAdapter, GitAdapter, FilesystemAdapter } from "@komatik/slipstream/adapters";
 import { LlmStrategy } from "@komatik/slipstream/strategies";
 import {
@@ -533,7 +533,7 @@ const strategy = new LlmStrategy({
 });
 
 // 3. Full pipeline with session lifecycle + model routing
-const uc = new Undercurrent({
+const uc = new Slipstream({
   adapters,
   strategy,
   targetPlatform: "cursor",
@@ -567,7 +567,7 @@ The `client` is any object implementing `KomatikDataClient` — the interface ma
 
 | Principle                               | What It Means                                                                                                                     |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Container, not contents**             | Undercurrent provides the pipeline and plugin system. You bring the intelligence.                                                 |
+| **Container, not contents**             | Slipstream provides the pipeline and plugin system. You bring the intelligence.                                                 |
 | **Invisible by default**                | The user never knows enrichment is happening. They just get better responses.                                                     |
 | **Bias toward action**                  | A stated wrong assumption is cheaper than a right question. The engine assumes and surfaces, rather than interrogating.           |
 | **3-Second Rule**                       | Any clarification that reaches the user must be answerable in under 3 seconds. Binary, default-with-opt-out, or pick-from-3.      |
@@ -580,9 +580,9 @@ The `client` is any object implementing `KomatikDataClient` — the interface ma
 ## Project Structure
 
 ```
-undercurrent/
+slipstream/
 ├── src/
-│   ├── index.ts                      # Public API — Undercurrent class + re-exports
+│   ├── index.ts                      # Public API — Slipstream class + re-exports
 │   ├── types.ts                      # The protocol — all interfaces and types
 │   ├── engine/
 │   │   ├── pipeline.ts               # Core pipeline + governance + preflight integration
@@ -617,7 +617,7 @@ undercurrent/
 │   ├── mcp/                          # External MCP server (@komatik/slipstream/mcp)
 │   │   ├── postgrest-client.ts       # Lightweight PostgREST adapter (native fetch)
 │   │   ├── server.ts                 # McpServer: 2 tools, 7 resources, 1 prompt
-│   │   └── index.ts                  # Bin entry (undercurrent-mcp)
+│   │   └── index.ts                  # Bin entry (slipstream-mcp)
 │   └── transports/
 │       └── middleware.ts             # Express middleware + Fetch API handler
 ├── .github/

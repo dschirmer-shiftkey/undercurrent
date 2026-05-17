@@ -250,7 +250,7 @@ export interface EnrichmentTrace {
 }
 
 // ─── Platform Targeting ─────────────────────────────────────────────────────
-// Undercurrent tailors its enriched output to the target platform. Each
+// Slipstream tailors its enriched output to the target platform. Each
 // platform consumes context differently and benefits from different formats.
 
 export type TargetPlatform = "cursor" | "claude" | "chatgpt" | "api" | "mcp" | "generic";
@@ -286,7 +286,7 @@ export interface ObservabilityConfig {
 
 // ─── Pipeline Configuration ─────────────────────────────────────────────────
 
-export interface UndercurrentConfig {
+export interface SlipstreamConfig {
   adapters: ContextAdapter[];
   strategy: EnrichmentStrategy;
   maxClarifications?: number;
@@ -586,9 +586,9 @@ export interface ProcessResult {
 
 // ─── Follow-up Suggestions ──────────────────────────────────────────────────
 // Post-response reflection stage. After the agent produces a response,
-// Undercurrent analyzes it against session context and emits auto-complete
+// Slipstream analyzes it against session context and emits auto-complete
 // prompts that render under the user's text input. Categorized as
-// continue / amend / stop. Experimental, opt-in via UndercurrentConfig.suggestions.
+// continue / amend / stop. Experimental, opt-in via SlipstreamConfig.suggestions.
 
 export type FollowupCategory = "continue" | "amend" | "stop";
 

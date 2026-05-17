@@ -1,5 +1,5 @@
 ---
-description: Undercurrent architecture — how to extend adapters, strategies, and transports
+description: Slipstream architecture — how to extend adapters, strategies, and transports
 globs: "src/**/*.ts"
 alwaysApply: false
 ---
@@ -72,7 +72,7 @@ export class YourAdapter implements ContextAdapter {
 1. Create `src/strategies/your-strategy.ts`
 2. Implement `EnrichmentStrategy` interface (name, classifyIntent, analyzeGaps, resolveGap, compose)
 3. Export from `src/strategies/index.ts`
-4. Strategies are mutually exclusive — one per Undercurrent instance
+4. Strategies are mutually exclusive — one per Slipstream instance
 
 Key contracts:
 - `classifyIntent` → must return a full `IntentSignal` (never partial)
@@ -98,12 +98,12 @@ Adapters: Identity (komatik_profiles), Preference (user_preferences), Memory (se
 
 ## External MCP Server
 
-The MCP server (`src/mcp/`) exposes Undercurrent to external AI tools via the stdio transport. It reuses the existing Komatik adapters and DefaultStrategy.
+The MCP server (`src/mcp/`) exposes Slipstream to external AI tools via the stdio transport. It reuses the existing Komatik adapters and DefaultStrategy.
 
 ### Architecture
 
 ```
-External Tool (Cursor/Claude) ←→ stdin/stdout JSON-RPC ←→ McpServer ←→ Undercurrent Pipeline
+External Tool (Cursor/Claude) ←→ stdin/stdout JSON-RPC ←→ McpServer ←→ Slipstream Pipeline
                                                                         ├── 7 Komatik Adapters
                                                                         └── PostgREST Client → Supabase
 ```
@@ -111,8 +111,8 @@ External Tool (Cursor/Claude) ←→ stdin/stdout JSON-RPC ←→ McpServer ←�
 ### Key files
 
 - `src/mcp/postgrest-client.ts` — Lightweight `KomatikDataClient` using native `fetch` against Supabase PostgREST API. No `@supabase/supabase-js`.
-- `src/mcp/server.ts` — `createUndercurrentMcpServer(config)` registers tools, resources, prompts. Import from `@komatik/slipstream/mcp`.
-- `src/mcp/index.ts` — Bin entry point (`undercurrent-mcp`). Reads env vars, connects `StdioServerTransport`.
+- `src/mcp/server.ts` — `createSlipstreamMcpServer(config)` registers tools, resources, prompts. Import from `@komatik/slipstream/mcp`.
+- `src/mcp/index.ts` — Bin entry point (`slipstream-mcp`). Reads env vars, connects `StdioServerTransport`.
 
 ### MCP surface
 

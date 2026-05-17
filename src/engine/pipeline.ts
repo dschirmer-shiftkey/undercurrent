@@ -26,7 +26,7 @@ import type {
   SessionHealth,
   TargetPlatform,
   TokenAccounting,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "../types.js";
 import { randomUUID } from "node:crypto";
 import { Checkpointer } from "./checkpointer.js";
@@ -71,7 +71,7 @@ export class Pipeline {
   private readonly maxTraceEvents: number;
   private traceEvents: EnrichmentTraceEvent[] = [];
 
-  constructor(config: UndercurrentConfig) {
+  constructor(config: SlipstreamConfig) {
     this.adapters = [...config.adapters].sort((a, b) => a.priority - b.priority);
     this.strategy = config.strategy;
     this.maxClarifications = config.maxClarifications ?? 2;
@@ -327,7 +327,7 @@ export class Pipeline {
 
   async process(input: EnrichInput): Promise<ProcessResult> {
     if (!this.modelRouter || !this.modelRouterConfig || !this.modelUsageAdapter) {
-      throw new Error("Undercurrent: process() requires modelRouter to be configured and enabled.");
+      throw new Error("Slipstream: process() requires modelRouter to be configured and enabled.");
     }
 
     const enrichedPrompt = await this.enrich(input);
@@ -349,7 +349,7 @@ export class Pipeline {
 
   private async routeModel(intent: IntentSignal): Promise<ModelRecommendation> {
     if (!this.modelRouter || !this.modelUsageAdapter) {
-      throw new Error("Undercurrent: model routing not configured.");
+      throw new Error("Slipstream: model routing not configured.");
     }
 
     const scoringData = await this.modelUsageAdapter.loadScoringData();
@@ -968,7 +968,7 @@ export class Pipeline {
       promise,
       new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error(`Undercurrent timeout: ${label} exceeded ${this.timeoutMs}ms`)),
+          () => reject(new Error(`Slipstream timeout: ${label} exceeded ${this.timeoutMs}ms`)),
           this.timeoutMs,
         ),
       ),
@@ -977,7 +977,7 @@ export class Pipeline {
 
   private log(...args: unknown[]): void {
     if (this.debug) {
-      console.log("[undercurrent]", ...args);
+      console.log("[slipstream]", ...args);
     }
   }
 }
