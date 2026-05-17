@@ -2,8 +2,6 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Undercurrent } from "../index.js";
 import { ConversationAdapter } from "../adapters/conversation.js";
-import { GitAdapter } from "../adapters/git.js";
-import { FilesystemAdapter } from "../adapters/filesystem.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import { parseTranscript } from "./transcript-parser.js";
 import type { GovernancePreset, TargetPlatform } from "../types.js";
@@ -51,13 +49,15 @@ interface ReliabilityMatrix {
   cells: MatrixCell[];
 }
 
+// The gate uses ConversationAdapter only — Git/Filesystem adapters read live
+// repo state, which makes token counts drift with every unrelated file change
+// (e.g. adding a new module shifts FilesystemAdapter output and the gate
+// fails for the wrong reason). Restricting to ConversationAdapter makes the
+// gate deterministic w.r.t. transcript content and surfaces real strategy /
+// preset / preflight regressions.
 function createPipeline(platform: TargetPlatform): Undercurrent {
   return new Undercurrent({
-    adapters: [
-      new ConversationAdapter(),
-      new GitAdapter({ cwd: process.cwd() }),
-      new FilesystemAdapter({ root: "./src" }),
-    ],
+    adapters: [new ConversationAdapter()],
     strategy: new DefaultStrategy(),
     targetPlatform: platform,
   });
