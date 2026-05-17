@@ -44,7 +44,9 @@ const AMBIGUOUS_REFERENCES = [
   "stuff",
 ];
 
-const NEGATION_WORDS = ["dont", "don't", "do not", "not", "never", "no"];
+const NEGATION_TOKENS = new Set(["dont", "don't", "not", "never", "no", "cannot", "cant", "can't", "shouldnt", "shouldn't", "wont", "won't"]);
+const MIN_CONTRADICTION_CONTENT_WORDS = 3;
+const MIN_CONTRADICTION_OVERLAP_WORDS = 2;
 
 export function runPreflight(input: PreflightInput): PreflightResult {
   const normalized = normalizeWhitespace(input.message);
@@ -174,21 +176,42 @@ function detectContradictions(message: string, recentDecisions: string[]): strin
   if (recentDecisions.length === 0) return [];
   const lower = normalizeWhitespace(message.toLowerCase());
   const contradictions: string[] = [];
-  const hasNegation = NEGATION_WORDS.some((word) => lower.includes(word));
-  if (!hasNegation) return contradictions;
+  if (!hasNegationToken(lower)) return contradictions;
 
   const contentWords = extractContentWords(lower);
-  if (contentWords.size === 0) return contradictions;
+  if (contentWords.size < MIN_CONTRADICTION_CONTENT_WORDS) return contradictions;
 
   for (const decision of recentDecisions.slice(-5)) {
     const decisionLower = normalizeWhitespace(decision.toLowerCase());
-    const overlap = overlapRatio(contentWords, extractContentWords(decisionLower));
+    const decisionWords = extractContentWords(decisionLower);
+    if (decisionWords.size < MIN_CONTRADICTION_CONTENT_WORDS) continue;
+    const sharedCount = sharedWordCount(contentWords, decisionWords);
+    if (sharedCount < MIN_CONTRADICTION_OVERLAP_WORDS) continue;
+    const overlap = sharedCount / Math.min(contentWords.size, decisionWords.size);
     if (overlap >= 0.4) {
       contradictions.push(`Potential contradiction with recent decision: "${truncate(decision, 80)}"`);
     }
   }
 
   return contradictions;
+}
+
+function hasNegationToken(lower: string): boolean {
+  const tokens = splitOnWhitespace(lower).map((t) => cleanWord(t));
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (NEGATION_TOKENS.has(token)) return true;
+    if (token === "do" && i + 1 < tokens.length && tokens[i + 1] === "not") return true;
+  }
+  return false;
+}
+
+function sharedWordCount(a: Set<string>, b: Set<string>): number {
+  let count = 0;
+  for (const token of a) {
+    if (b.has(token)) count++;
+  }
+  return count;
 }
 
 function buildVocabulary(conversation: ConversationTurn[]): Set<string> {
@@ -263,15 +286,6 @@ function damerauLevenshtein(a: string, b: string, maxDistance: number): number {
   }
 
   return dp[a.length]![b.length]!;
-}
-
-function overlapRatio(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let overlap = 0;
-  for (const token of a) {
-    if (b.has(token)) overlap++;
-  }
-  return overlap / Math.min(a.size, b.size);
 }
 
 function extractContentWords(text: string): Set<string> {

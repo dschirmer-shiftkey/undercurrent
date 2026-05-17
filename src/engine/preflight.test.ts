@@ -69,4 +69,51 @@ describe("runPreflight", () => {
     expect(result.contradictions.length).toBeGreaterThan(0);
     expect(result.blockingClarificationNeeded).toBe(true);
   });
+
+  it("does not treat substrings like 'no' inside 'node' as negation", () => {
+    const result = runPreflight({
+      message: "let's use the node runtime for the developer pages",
+      conversation: [],
+      recentDecisions: ["Use the node runtime and apply developer pages styling."],
+      policy: basePolicy,
+    });
+
+    expect(result.contradictions).toEqual([]);
+    expect(result.blockingClarificationNeeded).toBe(false);
+  });
+
+  it("does not treat 'notion' or 'notes' as negation", () => {
+    const result = runPreflight({
+      message: "review the notion of caching in the developer pages notes",
+      conversation: [],
+      recentDecisions: ["Add caching to developer pages and document it in notes."],
+      policy: basePolicy,
+    });
+
+    expect(result.contradictions).toEqual([]);
+    expect(result.blockingClarificationNeeded).toBe(false);
+  });
+
+  it("does not flag contradictions on trivial single-word overlap", () => {
+    const result = runPreflight({
+      message: "don't worry about it",
+      conversation: [],
+      recentDecisions: ["Change developer pages to white theme and apply globally."],
+      policy: basePolicy,
+    });
+
+    expect(result.contradictions).toEqual([]);
+  });
+
+  it("still flags real negated contradictions with sufficient content overlap", () => {
+    const result = runPreflight({
+      message: "don't apply the white theme to developer pages",
+      conversation: [],
+      recentDecisions: ["Apply the white theme to developer pages globally."],
+      policy: basePolicy,
+    });
+
+    expect(result.contradictions.length).toBeGreaterThan(0);
+    expect(result.blockingClarificationNeeded).toBe(true);
+  });
 });
