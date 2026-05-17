@@ -380,6 +380,66 @@ export interface ObservabilityConfig {
   maxTraceEvents?: number;
 }
 
+// ─── Telemetry Emission ────────────────────────────────────────────────────
+// Standards-compliant span emission for production observability. The shape
+// mirrors OpenTelemetry GenAI semantic conventions
+// (https://opentelemetry.io/docs/specs/semconv/gen-ai/) so consumers can
+// pipe to Langfuse, Helicone, Arize Phoenix, or any OTel backend with a
+// thin adapter. Slipstream stays zero-dep — we define the contract,
+// callers bring the SDK.
+
+/**
+ * Status of a completed span. Mirrors OTel `Status` (UNSET | OK | ERROR)
+ * but collapsed to a 2-state boolean — Slipstream doesn't emit UNSET.
+ */
+export type TelemetrySpanStatus = "ok" | "error";
+
+/**
+ * A finished span ready to ship to an OTel backend. Attribute keys follow
+ * OTel GenAI conventions where applicable (e.g., `gen_ai.system`,
+ * `gen_ai.operation.name`, `gen_ai.usage.input_tokens`). Slipstream-
+ * specific attributes use the `slipstream.*` namespace.
+ *
+ * Values are primitive (string | number | boolean) so they serialize
+ * directly to any OTel exporter.
+ */
+export interface TelemetrySpan {
+  /** Span name. e.g. `"slipstream.enrich"`, `"slipstream.process"`. */
+  name: string;
+  /** Unix ms when the operation started. */
+  startedAt: number;
+  /** Unix ms when the operation ended. */
+  endedAt: number;
+  /** Convenience: `endedAt - startedAt`. */
+  durationMs: number;
+  /** OTel attribute map. Keys follow GenAI conventions; values are primitive. */
+  attributes: Record<string, string | number | boolean>;
+  /** Optional inner events (e.g., per-adapter completion, governance interventions). */
+  events?: TelemetrySpanEvent[];
+  /** Span status. `error` when the operation threw; `ok` otherwise. */
+  status: TelemetrySpanStatus;
+  /** Populated when status === "error". */
+  error?: { message: string; type?: string };
+}
+
+export interface TelemetrySpanEvent {
+  /** Event name (e.g., `"adapter.completed"`, `"governance.intervention"`). */
+  name: string;
+  /** Unix ms when the event fired. */
+  at: number;
+  attributes?: Record<string, string | number | boolean>;
+}
+
+/**
+ * Plug-in contract for telemetry emission. Implementations push the span
+ * to their backend (OTel SDK, Langfuse, Helicone, custom HTTP, console).
+ * Should never throw — Slipstream wraps calls but errors here would mask
+ * actual enrichment behavior in metadata.
+ */
+export interface TelemetryEmitter {
+  emit(span: TelemetrySpan): void | Promise<void>;
+}
+
 // ─── Pipeline Configuration ─────────────────────────────────────────────────
 
 export interface SlipstreamConfig {
@@ -422,6 +482,13 @@ export interface SlipstreamConfig {
    * `Slipstream.recordTierOutcome()` to feed acceptance signal back.
    */
   tierBiasLearner?: TierBiasLearnerInterface;
+  /**
+   * Optional telemetry emitter. When set, every `enrich()` and `process()`
+   * call produces an OTel-GenAI-compliant `TelemetrySpan` for the emitter.
+   * Slipstream ships zero deps — the consumer's emitter implementation
+   * decides where the span goes (OTel SDK, Langfuse, Helicone, console).
+   */
+  telemetry?: TelemetryEmitter;
 }
 
 // Forward declaration so SlipstreamConfig can reference the learner type

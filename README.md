@@ -325,6 +325,44 @@ const health = await slipstream.healthCheck();
 
 Per-adapter timeout via `adapterTimeoutMs` prevents one slow remote-backed adapter from eating the whole pipeline budget. `failureMode: "strict"` is available for callers that need errors to propagate.
 
+### OpenTelemetry-GenAI telemetry
+
+Slipstream emits standards-compliant spans per `enrich()` and `process()` call when a `TelemetryEmitter` is configured. Attribute names follow the [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) so spans push directly to Langfuse, Helicone, Arize Phoenix, Datadog, or any OTel backend via a thin adapter.
+
+```ts
+import type { TelemetryEmitter, TelemetrySpan } from "@komatik/slipstream";
+
+const otelEmitter: TelemetryEmitter = {
+  async emit(span: TelemetrySpan) {
+    // Push to your OTel SDK / Langfuse / Helicone / etc.
+    tracer.startActiveSpan(span.name, (s) => {
+      Object.entries(span.attributes).forEach(([k, v]) => s.setAttribute(k, v));
+      span.events?.forEach((e) => s.addEvent(e.name, e.attributes, new Date(e.at)));
+      s.setStatus({ code: span.status === "ok" ? 1 : 2, message: span.error?.message });
+      s.end(new Date(span.endedAt));
+    });
+  },
+};
+
+const slip = new Slipstream({
+  adapters: [...],
+  strategy: new DefaultStrategy(),
+  telemetry: otelEmitter,
+});
+```
+
+Each span carries:
+
+| Convention | Attribute | Notes |
+|---|---|---|
+| OTel GenAI | `gen_ai.system`, `gen_ai.operation.name`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.model` | Standard cross-vendor |
+| Slipstream | `slipstream.tier_recommended`, `slipstream.tier_bias_applied`, `slipstream.tier_bias_reason` | Tier-recommendation telemetry |
+| Slipstream | `slipstream.degraded`, `slipstream.failed_adapter_count`, `slipstream.model_router_degraded` | Backend degradation |
+| Slipstream | `slipstream.preflight_cascade_risk`, `slipstream.preflight_blocking_clarification`, `slipstream.governance_interventions` | Governance + preflight signals |
+| Slipstream | `slipstream.intent_action`, `slipstream.intent_specificity`, `slipstream.intent_scope`, `slipstream.intent_emotional_load` | Per-message intent for segmentation |
+
+A throwing emitter never breaks the enrichment path — `safelyEmit()` wraps every call.
+
 ### Validating tier-recommendation rollout
 
 The `runTierRecommendationHarness` helper compares user-picked-tier strategies against `slipstream-recommended`, with the host's tier→model mapping held constant:
