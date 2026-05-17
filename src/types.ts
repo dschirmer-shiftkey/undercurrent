@@ -133,6 +133,8 @@ export interface AdapterResult {
 }
 
 export interface EnrichmentMetadata {
+  /** Stable unique ID for this enrichment, used to link outcome verdicts. */
+  enrichmentId: string;
   pipelineVersion: string;
   enrichmentDepth: "none" | "light" | "standard" | "deep";
   processingTimeMs: number;
@@ -145,6 +147,7 @@ export interface EnrichmentMetadata {
   /** Wave-meter-style readout of session token pressure. Present only when sessionMonitor is configured. */
   budget?: BudgetMeter;
   governance?: GovernanceSummary;
+  preflight?: PreflightResult;
   trace?: EnrichmentTrace;
 }
 
@@ -199,7 +202,32 @@ export interface GovernanceSummary {
   interventions: GovernanceIntervention[];
 }
 
+export interface Correction {
+  type: "typo" | "continuation";
+  original: string;
+  corrected: string;
+  basis: string;
+  confidence: number;
+}
+
+export type CascadeRiskLevel = "low" | "medium" | "high";
+
+export interface CascadeRisk {
+  level: CascadeRiskLevel;
+  signals: string[];
+  reasoning: string;
+}
+
+export interface PreflightResult {
+  correctedMessage: string;
+  corrections: Correction[];
+  cascadeRisk: CascadeRisk;
+  contradictions: string[];
+  blockingClarificationNeeded: boolean;
+}
+
 export type TraceStage =
+  | "preflight"
   | "classify"
   | "gather"
   | "govern"
@@ -227,7 +255,18 @@ export interface EnrichmentTrace {
 
 export type TargetPlatform = "cursor" | "claude" | "chatgpt" | "api" | "mcp" | "generic";
 
-export type GovernancePreset = "strict-governance" | "balanced" | "speed-first";
+export type GovernancePreset =
+  | "strict-governance"
+  | "balanced"
+  | "speed-first"
+  | "safety-first";
+
+export interface PreflightPolicy {
+  enabled: boolean;
+  silentCorrectionsEnabled: boolean;
+  blockOnCascadeRisk: "none" | "high";
+  maxCorrectionsPerMessage: number;
+}
 
 export interface MemoryGovernancePolicy {
   preset: GovernancePreset;
@@ -237,6 +276,7 @@ export interface MemoryGovernancePolicy {
   blockLowConfidenceAssumptions: boolean;
   dropStaleContext: boolean;
   maxAssumptionsPerMessage: number;
+  preflight: PreflightPolicy;
 }
 
 export interface ObservabilityConfig {
@@ -261,6 +301,46 @@ export interface UndercurrentConfig {
   sessionMonitor?: SessionMonitorConfig;
   modelRouter?: ModelRouterConfig;
   suggestions?: SuggestionsConfig;
+  /** When set, every enrichment auto-persists a telemetry row to enrichment_outcomes. */
+  outcomeWriter?: OutcomeWriterConfig;
+}
+
+export interface OutcomeWriterConfig {
+  /** The writer instance that persists enrichment records and verdicts. */
+  writer: OutcomeWriter;
+  /** Optional session ID to tag on every record. */
+  sessionId?: string;
+  /** Optional workspace ID. */
+  workspaceId?: string;
+}
+
+// ─── Outcome Writer ─────────────────────────────────────────────────────────
+// Interface for persisting enrichment outcomes and recording user verdicts.
+// KomatikOutcomeWriter implements this against the enrichment_outcomes table.
+
+export type OutcomeVerdict = "accepted" | "rejected" | "revised" | "ignored";
+
+export interface OutcomeVerdictInput {
+  enrichmentId: string;
+  verdict: OutcomeVerdict;
+  assumptionsAccepted?: string[];
+  assumptionsCorrected?: string[];
+  correctionDetails?: Record<string, unknown>;
+}
+
+export interface OutcomeWriter {
+  writeEnrichmentRecord(
+    enrichmentId: string,
+    enriched: EnrichedPrompt,
+    extra?: {
+      platform?: string;
+      sessionId?: string;
+      modelUsed?: string;
+      workspaceId?: string;
+    },
+  ): Promise<void>;
+
+  recordVerdict(input: OutcomeVerdictInput): Promise<void>;
 }
 
 // ─── Adapter Interface ──────────────────────────────────────────────────────

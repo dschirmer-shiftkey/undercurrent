@@ -22,16 +22,19 @@ import type {
   ModelRouterConfig,
   PipelineHooks,
   ProcessResult,
+  PreflightResult,
   SessionHealth,
   TargetPlatform,
   TokenAccounting,
   UndercurrentConfig,
 } from "../types.js";
+import { randomUUID } from "node:crypto";
 import { Checkpointer } from "./checkpointer.js";
 import { Compactor } from "./compactor.js";
 import { ModelRouter } from "./model-router.js";
 import { KomatikModelUsageAdapter } from "../komatik/model-usage-adapter.js";
 import { SessionMonitor, estimateTokens } from "./session-monitor.js";
+import { runPreflight } from "./preflight.js";
 
 const PIPELINE_VERSION = "0.2.0";
 
@@ -134,10 +137,13 @@ export class Pipeline {
   async enrich(input: EnrichInput): Promise<EnrichedPrompt> {
     const start = performance.now();
     const conversation = input.conversation ?? [];
+    const originalMessage = input.message;
+    let activeMessage = originalMessage;
     const adapterTimings: Record<string, number> = {};
     const platform = input.targetPlatform ?? this.defaultPlatform;
     const policy = this.resolveGovernancePolicy(input.preset);
     const interventions: GovernanceIntervention[] = [];
+    let preflight: PreflightResult | undefined;
     this.resetTrace();
 
     // ── Session Lifecycle: Cold-Start Restoration ────────────────────────
@@ -160,9 +166,25 @@ export class Pipeline {
     }
 
     // ── Stage 1: Intent Classification ───────────────────────────────────
-    this.hooks.beforeClassify?.(input.message);
+    if (policy.preflight.enabled) {
+      preflight = runPreflight({
+        message: activeMessage,
+        conversation,
+        recentDecisions: this.recentDecisions(conversation),
+        policy: policy.preflight,
+      });
+      activeMessage = preflight.correctedMessage;
+      this.pushTrace("preflight", "preflight_applied", "Applied preflight interception heuristics.", {
+        corrections: preflight.corrections.length,
+      }, {
+        risk: preflight.cascadeRisk.level,
+        contradictions: preflight.contradictions.length,
+      });
+    }
+
+    this.hooks.beforeClassify?.(activeMessage);
     const intent = await this.withTimeout(
-      this.strategy.classifyIntent(input.message, conversation),
+      this.strategy.classifyIntent(activeMessage, conversation),
       "classifyIntent",
     );
     this.hooks.afterClassify?.(intent);
@@ -175,15 +197,15 @@ export class Pipeline {
     this.pushTrace("classify", "depth_selected", `Selected enrichment depth: ${depth}.`);
 
     if (depth === "none") {
-      const result = this.passthrough(input.message, intent, start, platform, policy.preset);
-      this.trackSession(input.message, conversation, result.enrichedMessage);
+      const result = this.passthrough(originalMessage, activeMessage, intent, start, platform, policy.preset, preflight);
+      this.trackSession(activeMessage, conversation, result.enrichedMessage);
       return result;
     }
 
     // ── Stage 2: Context Harvesting ──────────────────────────────────────
     this.hooks.beforeGather?.(intent);
     const { layers: harvested, adapterResults } = await this.harvestContext(
-      input.message,
+      activeMessage,
       intent,
       conversation,
       adapterTimings,
@@ -219,12 +241,15 @@ export class Pipeline {
 
     // ── Stage 3: Gap Analysis ────────────────────────────────────────────
     const rawGaps = await this.withTimeout(
-      this.strategy.analyzeGaps(intent, context, input.message),
+      this.strategy.analyzeGaps(intent, context, activeMessage),
       "analyzeGaps",
     );
     this.hooks.beforeAnalyze?.(rawGaps);
 
-    const resolvedGaps = await this.resolveGaps(rawGaps, context);
+    const resolvedGaps = await this.resolveGaps(rawGaps, context, preflight?.cascadeRisk.level === "high");
+    if (preflight?.blockingClarificationNeeded) {
+      this.applyPreflightClarification(resolvedGaps, preflight);
+    }
     const governedGaps = this.applyAssumptionGovernance(resolvedGaps, policy, interventions);
     this.hooks.afterAnalyze?.(governedGaps);
     this.log("gaps", { total: rawGaps.length, resolved: governedGaps.length });
@@ -241,21 +266,21 @@ export class Pipeline {
 
     // ── Stage 4: Enrichment Composition ──────────────────────────────────
     this.hooks.beforeCompose?.({
-      message: input.message,
+      message: activeMessage,
       intent,
       context,
     });
 
     const enrichedMessage = await this.withTimeout(
-      this.strategy.compose(input.message, intent, context, assumptions, governedGaps),
+      this.strategy.compose(activeMessage, intent, context, assumptions, governedGaps),
       "compose",
     );
     this.pushTrace("compose", "message_composed", "Generated enriched message.");
 
-    const tokens = this.computeTokens(input.message, enrichedMessage, context);
+    const tokens = this.computeTokens(activeMessage, enrichedMessage, context);
     this.recordEnrichmentTokens(tokens.enrichedMessage + tokens.context);
     const result: EnrichedPrompt = {
-      originalMessage: input.message,
+      originalMessage,
       intent,
       context,
       gaps: governedGaps,
@@ -263,6 +288,7 @@ export class Pipeline {
       clarifications: clarifications.slice(0, this.maxClarifications),
       enrichedMessage,
       metadata: {
+        enrichmentId: randomUUID(),
         pipelineVersion: PIPELINE_VERSION,
         enrichmentDepth: depth,
         processingTimeMs: performance.now() - start,
@@ -273,6 +299,7 @@ export class Pipeline {
         tokens,
         budget: this.computeBudget(tokens),
         governance: governanceSummary,
+        preflight,
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
           : undefined,
@@ -292,7 +319,7 @@ export class Pipeline {
 
     // ── Session Lifecycle: Track + Checkpoint ────────────────────────────
     this.lastContext = context;
-    this.trackSession(input.message, conversation, enrichedMessage);
+    this.trackSession(activeMessage, conversation, enrichedMessage);
     await this.maybeCheckpoint(conversation);
 
     return result;
@@ -327,6 +354,15 @@ export class Pipeline {
 
     const scoringData = await this.modelUsageAdapter.loadScoringData();
     return this.modelRouter.recommend(intent, scoringData);
+  }
+
+  private recentDecisions(conversation: ConversationTurn[]): string[] {
+    const fromMonitor = this.monitor?.getState().decisionsThisSession ?? [];
+    const fromConversation = conversation
+      .filter((turn) => turn.role === "user")
+      .map((turn) => turn.content)
+      .slice(-8);
+    return [...fromMonitor, ...fromConversation];
   }
 
   private trackSession(
@@ -437,24 +473,27 @@ export class Pipeline {
   }
 
   private passthrough(
-    message: string,
+    originalMessage: string,
+    passthroughMessage: string,
     intent: IntentSignal,
     startTime: number,
     platform: TargetPlatform,
     preset: GovernancePreset,
+    preflight?: PreflightResult,
   ): EnrichedPrompt {
-    const tokens = this.computeTokens(message, message, []);
-    this.recordEnrichmentTokens(tokens.enrichedMessage);
+    const tokens = this.computeTokens(originalMessage, passthroughMessage, []);
+    this.recordEnrichmentTokens(tokens.enrichedMessage + tokens.context);
     this.pushTrace("finalize", "passthrough", "Message passed through without enrichment.");
     return {
-      originalMessage: message,
+      originalMessage,
       intent,
       context: [],
       gaps: [],
       assumptions: [],
       clarifications: [],
-      enrichedMessage: message,
+      enrichedMessage: passthroughMessage,
       metadata: {
+        enrichmentId: randomUUID(),
         pipelineVersion: PIPELINE_VERSION,
         enrichmentDepth: "none",
         processingTimeMs: performance.now() - startTime,
@@ -471,6 +510,7 @@ export class Pipeline {
           assumptionsAfter: 0,
           interventions: [],
         },
+        preflight,
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
           : undefined,
@@ -489,6 +529,12 @@ export class Pipeline {
         blockLowConfidenceAssumptions: true,
         dropStaleContext: true,
         maxAssumptionsPerMessage: 2,
+        preflight: {
+          enabled: false,
+          silentCorrectionsEnabled: true,
+          blockOnCascadeRisk: "none",
+          maxCorrectionsPerMessage: 5,
+        },
       },
       balanced: {
         preset,
@@ -498,6 +544,12 @@ export class Pipeline {
         blockLowConfidenceAssumptions: true,
         dropStaleContext: true,
         maxAssumptionsPerMessage: 3,
+        preflight: {
+          enabled: false,
+          silentCorrectionsEnabled: true,
+          blockOnCascadeRisk: "none",
+          maxCorrectionsPerMessage: 5,
+        },
       },
       "speed-first": {
         preset,
@@ -507,6 +559,27 @@ export class Pipeline {
         blockLowConfidenceAssumptions: false,
         dropStaleContext: false,
         maxAssumptionsPerMessage: 5,
+        preflight: {
+          enabled: false,
+          silentCorrectionsEnabled: true,
+          blockOnCascadeRisk: "none",
+          maxCorrectionsPerMessage: 5,
+        },
+      },
+      "safety-first": {
+        preset,
+        maxContextAgeMs: 24 * 60 * 60 * 1000,
+        criticalAssumptionMinConfidence: 0.84,
+        assumptionMinConfidence: 0.76,
+        blockLowConfidenceAssumptions: true,
+        dropStaleContext: true,
+        maxAssumptionsPerMessage: 2,
+        preflight: {
+          enabled: true,
+          silentCorrectionsEnabled: true,
+          blockOnCascadeRisk: "high",
+          maxCorrectionsPerMessage: 5,
+        },
       },
     };
     return { ...defaultsByPreset[preset], ...this.governanceOverrides, preset };
@@ -805,18 +878,72 @@ export class Pipeline {
     return { layers, adapterResults };
   }
 
-  private async resolveGaps(gaps: Gap[], context: ContextLayer[]): Promise<Gap[]> {
+  private async resolveGaps(
+    gaps: Gap[],
+    context: ContextLayer[],
+    highCascadeRisk: boolean,
+  ): Promise<Gap[]> {
+    const resolutionContext = highCascadeRisk
+      ? [
+          ...context,
+          {
+            source: "preflight",
+            priority: Number.MAX_SAFE_INTEGER,
+            timestamp: Date.now(),
+            summary: "High preflight cascade risk",
+            data: { cascadeRisk: "high" },
+          } satisfies ContextLayer,
+        ]
+      : context;
     return Promise.all(
       gaps.map(async (gap) => {
         if (gap.resolution) return gap;
         try {
-          const resolution = await this.strategy.resolveGap(gap, context, this.confidenceThreshold);
+          const resolution = await this.strategy.resolveGap(
+            gap,
+            resolutionContext,
+            this.confidenceThreshold,
+          );
           return { ...gap, resolution };
         } catch {
           return gap;
         }
       }),
     );
+  }
+
+  private applyPreflightClarification(gaps: Gap[], preflight: PreflightResult): void {
+    const question = this.buildPreflightClarificationQuestion(preflight);
+    if (!question) return;
+    gaps.push({
+      id: `preflight-${Date.now()}`,
+      description: "High-consequence ambiguity detected before execution.",
+      critical: true,
+      resolution: {
+        type: "needs-clarification",
+        clarification: {
+          id: `preflight-clarify-${Date.now()}`,
+          question,
+          options: [
+            { id: "continue", label: "Continue with intended target", isDefault: true },
+            { id: "specify", label: "Specify exact target before continuing", isDefault: false },
+          ],
+          allowMultiple: false,
+          defaultOptionId: "continue",
+          reason: "Preflight identified high-risk ambiguity in the request.",
+        },
+      },
+    });
+  }
+
+  private buildPreflightClarificationQuestion(preflight: PreflightResult): string | null {
+    if (preflight.contradictions.length > 0) {
+      return "Your message may contradict a recent instruction. Which direction should I follow?";
+    }
+    if (preflight.cascadeRisk.level === "high") {
+      return "This request appears high-risk and ambiguous. Which exact target should I act on?";
+    }
+    return null;
   }
 
   private extractAssumptions(gaps: Gap[]): Assumption[] {

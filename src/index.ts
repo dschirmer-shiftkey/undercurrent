@@ -27,6 +27,12 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
     blockLowConfidenceAssumptions: true,
     dropStaleContext: true,
     maxAssumptionsPerMessage: 2,
+    preflight: {
+      enabled: false,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "none",
+      maxCorrectionsPerMessage: 5,
+    },
   },
   balanced: {
     preset: "balanced",
@@ -36,6 +42,12 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
     blockLowConfidenceAssumptions: true,
     dropStaleContext: true,
     maxAssumptionsPerMessage: 3,
+    preflight: {
+      enabled: false,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "none",
+      maxCorrectionsPerMessage: 5,
+    },
   },
   "speed-first": {
     preset: "speed-first",
@@ -45,6 +57,27 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
     blockLowConfidenceAssumptions: false,
     dropStaleContext: false,
     maxAssumptionsPerMessage: 5,
+    preflight: {
+      enabled: false,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "none",
+      maxCorrectionsPerMessage: 5,
+    },
+  },
+  "safety-first": {
+    preset: "safety-first",
+    maxContextAgeMs: 24 * 60 * 60 * 1000,
+    criticalAssumptionMinConfidence: 0.84,
+    assumptionMinConfidence: 0.76,
+    blockLowConfidenceAssumptions: true,
+    dropStaleContext: true,
+    maxAssumptionsPerMessage: 2,
+    preflight: {
+      enabled: true,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "high",
+      maxCorrectionsPerMessage: 5,
+    },
   },
 };
 
@@ -79,11 +112,46 @@ export class Undercurrent {
   }
 
   async enrich(input: EnrichInput): Promise<EnrichedPrompt> {
-    return this.pipeline.enrich(input);
+    const result = await this.pipeline.enrich(input);
+    await this.persistOutcome(result);
+    return result;
   }
 
   async process(input: EnrichInput): Promise<ProcessResult> {
     return this.pipeline.process(input);
+  }
+
+  /**
+   * Record a user verdict for a previous enrichment.
+   * Requires outcomeWriter to be configured.
+   */
+  async recordVerdict(input: {
+    enrichmentId: string;
+    verdict: "accepted" | "rejected" | "revised" | "ignored";
+    assumptionsAccepted?: string[];
+    assumptionsCorrected?: string[];
+    correctionDetails?: Record<string, unknown>;
+  }): Promise<void> {
+    const ow = this.config.outcomeWriter;
+    if (!ow) return;
+    await ow.writer.recordVerdict(input);
+  }
+
+  private async persistOutcome(result: EnrichedPrompt): Promise<void> {
+    const ow = this.config.outcomeWriter;
+    if (!ow) return;
+    try {
+      await ow.writer.writeEnrichmentRecord(
+        result.metadata.enrichmentId,
+        result,
+        {
+          sessionId: ow.sessionId,
+          workspaceId: ow.workspaceId,
+        },
+      );
+    } catch {
+      // Non-fatal — enrichment telemetry loss is acceptable
+    }
   }
 
   async suggestFollowups(input: SuggestionInput): Promise<SuggestionResult> {
@@ -132,6 +200,7 @@ export { ModelRouter, TaskDomainClassifier, ModelScorer } from "./engine/model-r
 export { Suggester } from "./engine/suggester.js";
 export { analyzeResponse } from "./engine/response-signals.js";
 export { KomatikPilotProcessor } from "./komatik/pilot.js";
+export { KomatikOutcomeWriter } from "./komatik/outcome-writer.js";
 
 export type {
   Action,
@@ -166,6 +235,8 @@ export type {
   ModelRecommendation,
   ModelRouterConfig,
   PipelineHooks,
+  PreflightPolicy,
+  PreflightResult,
   ProcessResult,
   ResponseSignals,
   Scope,
@@ -186,6 +257,13 @@ export type {
   EnrichmentTraceEvent,
   TraceStage,
   ObservabilityConfig,
+  OutcomeVerdict,
+  OutcomeVerdictInput,
+  OutcomeWriter,
+  OutcomeWriterConfig,
+  CascadeRisk,
+  CascadeRiskLevel,
+  Correction,
   TaskDomain,
   TargetPlatform,
   UndercurrentConfig,
