@@ -122,6 +122,68 @@ describe("DriftMonitor", () => {
     });
   });
 
+  describe("gauge", () => {
+    it("reports a stable gauge when no drift has occurred", () => {
+      const monitor = new DriftMonitor();
+      monitor.observe("Slipstream pipeline ready.", 0);
+      monitor.observe("Komatik integration tested.", 1);
+      const gauge = monitor.gauge();
+
+      expect(gauge.level).toBe("stable");
+      expect(gauge.score).toBe(0);
+      expect(gauge.refreshRecommended).toBe(false);
+      expect(gauge.totalEvents).toBe(0);
+    });
+
+    it("escalates the level as drift events accumulate in the recent window", () => {
+      const monitor = new DriftMonitor({ gaugeWindowTurns: 5 });
+      monitor.observe("Slipstream v2.", 0);
+      monitor.observe("Slipstream replay green.", 1);
+      monitor.observe("slipstream check.", 2);
+      const minor = monitor.gauge();
+
+      monitor.observe("slipstream gate up.", 3);
+      monitor.observe("slipstream metrics nominal.", 4);
+      const elevated = monitor.gauge();
+
+      expect(minor.level).not.toBe("stable");
+      expect(elevated.score).toBeGreaterThanOrEqual(minor.score);
+    });
+
+    it("flips refreshRecommended once score crosses the threshold", () => {
+      const monitor = new DriftMonitor({ refreshThreshold: 10 });
+      monitor.observe("Slipstream ready.", 0);
+      monitor.observe("slipstream check.", 1);
+      monitor.observe("slipstream verify.", 2);
+      const gauge = monitor.gauge();
+
+      expect(gauge.refreshRecommended).toBe(true);
+      expect(gauge.reasoning).toContain("refresh");
+    });
+
+    it("includes the gauge in analyze() reports", () => {
+      const monitor = new DriftMonitor();
+      const report = monitor.analyze(
+        turns("Slipstream is up.", "slipstream is down."),
+      );
+      expect(report.gauge).toBeDefined();
+      expect(report.gauge.totalEvents).toBe(report.events.length);
+    });
+
+    it("computes a trend across multiple gauge readings", () => {
+      const monitor = new DriftMonitor({ gaugeWindowTurns: 10 });
+      monitor.observe("Slipstream stable.", 0);
+      monitor.observe("Slipstream still good.", 1);
+      // Several drift events in a row should push trend up
+      monitor.observe("slipstream check.", 2);
+      monitor.observe("slipstream verify.", 3);
+      monitor.observe("slipstream test.", 4);
+      monitor.observe("slipstream rerun.", 5);
+      const gauge = monitor.gauge();
+      expect(["stable", "increasing"]).toContain(gauge.trend);
+    });
+  });
+
   describe("stop-words and noise filtering", () => {
     it("ignores common all-caps acronyms (TODO, HTTP, JSON, etc.)", () => {
       const monitor = new DriftMonitor();

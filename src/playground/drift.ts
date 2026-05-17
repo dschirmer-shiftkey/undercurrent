@@ -31,6 +31,11 @@ function truncate(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
+function renderBar(score: number, width = 20): string {
+  const filled = Math.round((score / 100) * width);
+  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}]`;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
@@ -53,6 +58,7 @@ async function main(): Promise<void> {
 
     const monitor = new DriftMonitor();
     const report = monitor.analyze(allTurns);
+    const g = report.gauge;
 
     console.log(
       `  ${allTurns.length} turns processed | ${report.events.length} drift events (${report.rewrites} rewrite, ${report.flags} flag)`,
@@ -60,6 +66,14 @@ async function main(): Promise<void> {
     console.log(
       `  by kind: case=${report.byKind.case}  suffix=${report.byKind.suffix}  typo=${report.byKind.typo}  path=${report.byKind.path}`,
     );
+    console.log("");
+    console.log(`  ┌─ DRIFT GAUGE ──────────────────────────────────────────`);
+    console.log(`  │ Level:    ${g.level.padEnd(10)}  ${renderBar(g.score)} ${g.score}/100`);
+    console.log(`  │ Trend:    ${g.trend}`);
+    console.log(`  │ Recent:   ${g.recentEvents} event(s) in last window (asOfTurn=${g.asOfTurn})`);
+    console.log(`  │ Refresh:  ${g.refreshRecommended ? "RECOMMENDED — refresh canonical context" : "not yet"}`);
+    console.log(`  │ Reason:   ${g.reasoning}`);
+    console.log(`  └────────────────────────────────────────────────────────`);
 
     if (report.events.length > 0) {
       console.log("\n  Drift events:");

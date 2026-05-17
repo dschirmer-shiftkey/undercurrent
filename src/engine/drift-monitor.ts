@@ -42,6 +42,33 @@ export interface DriftMonitorOptions {
   pinnedCanonicals?: string[];
   /** Disable specific drift kinds. Defaults: all enabled. */
   disable?: DriftKind[];
+  /** Rolling window (number of turns) used by the gauge to weight recent drift. Default 5. */
+  gaugeWindowTurns?: number;
+  /** Score threshold above which `refreshRecommended` flips true. Default 40 (moderate). */
+  refreshThreshold?: number;
+}
+
+export type DriftLevel = "stable" | "minor" | "moderate" | "elevated" | "critical";
+
+export interface DriftGauge {
+  /** Total drift events observed since session start. */
+  totalEvents: number;
+  /** Events whose `observedTurn` falls within the rolling window. */
+  recentEvents: number;
+  /** Most recent turn index observed (drives the rolling window). */
+  asOfTurn: number;
+  /** Weighted score 0-100. Higher = more drift pressure. */
+  score: number;
+  /** Bucket derived from `score`. */
+  level: DriftLevel;
+  /** True when score ≥ `refreshThreshold` — caller should consider refreshing context. */
+  refreshRecommended: boolean;
+  /** Plain-English explanation of the current reading. */
+  reasoning: string;
+  /** Cumulative count by drift kind (all events ever observed). */
+  byKind: Record<DriftKind, number>;
+  /** Direction over the last 3 gauge readings. */
+  trend: "stable" | "increasing" | "decreasing";
 }
 
 export interface DriftReport {
@@ -50,6 +77,7 @@ export interface DriftReport {
   byKind: Record<DriftKind, number>;
   rewrites: number;
   flags: number;
+  gauge: DriftGauge;
 }
 
 interface RegistryEntry {
@@ -112,14 +140,28 @@ const STOP_PASCAL = new Set([
 
 const ENGLISH_VERB_INFLECTION_SUFFIXES = ["s", "ed", "ing", "es", "er"];
 
+const KIND_WEIGHT: Record<DriftKind, number> = {
+  case: 1,
+  path: 1,
+  suffix: 2,
+  typo: 3,
+};
+
 export class DriftMonitor {
   private readonly registry = new Map<string, RegistryEntry>();
   private readonly disabled: Set<DriftKind>;
   private readonly pinned: Set<string>;
+  private readonly allEvents: DriftEvent[] = [];
+  private readonly scoreHistory: number[] = [];
+  private readonly gaugeWindow: number;
+  private readonly refreshThreshold: number;
+  private latestTurn = -1;
 
   constructor(options: DriftMonitorOptions = {}) {
     this.disabled = new Set(options.disable ?? []);
     this.pinned = new Set([...(options.pinnedCanonicals ?? []), ...PINNED_DEFAULTS]);
+    this.gaugeWindow = options.gaugeWindowTurns ?? 5;
+    this.refreshThreshold = options.refreshThreshold ?? 40;
     for (const canonical of this.pinned) {
       this.registry.set(normalizeKey(canonical), {
         canonical,
@@ -131,6 +173,7 @@ export class DriftMonitor {
 
   /** Process a single message and return drift events surfaced this turn. */
   observe(message: string, turnIndex: number): DriftEvent[] {
+    this.latestTurn = Math.max(this.latestTurn, turnIndex);
     const candidates = extractEntities(message);
     // Also pull lowercase single-word tokens that match a known canonical's key —
     // catches "slipstream" when canonical is "Slipstream".
@@ -180,7 +223,59 @@ export class DriftMonitor {
       }
     }
 
+    if (events.length > 0) {
+      this.allEvents.push(...events);
+    }
+    this.recordScoreSnapshot();
     return events;
+  }
+
+  /**
+   * Current drift gauge. Informational — surfaces a single score + level
+   * (and an optional `refreshRecommended` flag) that an integrator can use
+   * to decide whether to refresh canonical context, prompt the user, or
+   * trigger compaction. The monitor does not act on the gauge itself.
+   */
+  gauge(): DriftGauge {
+    const byKind: Record<DriftKind, number> = { case: 0, suffix: 0, typo: 0, path: 0 };
+    let recentEvents = 0;
+    let weightedRecent = 0;
+    const windowStart = Math.max(0, this.latestTurn - this.gaugeWindow + 1);
+
+    for (const event of this.allEvents) {
+      byKind[event.kind]++;
+      if (event.observedTurn >= windowStart) {
+        recentEvents++;
+        weightedRecent += KIND_WEIGHT[event.kind];
+        // Flag-class events surface ambiguity — slightly higher weight than
+        // rewrite-class (rewrite is unambiguously the same entity).
+        if (event.action === "flag") weightedRecent += 0.5;
+      }
+    }
+
+    const score = Math.min(100, Math.round(weightedRecent * 8));
+    const level = scoreToLevel(score);
+    const refreshRecommended = score >= this.refreshThreshold;
+    const trend = computeTrend(this.scoreHistory);
+    const reasoning = buildReasoning(score, level, recentEvents, byKind, trend, refreshRecommended);
+
+    return {
+      totalEvents: this.allEvents.length,
+      recentEvents,
+      asOfTurn: this.latestTurn,
+      score,
+      level,
+      refreshRecommended,
+      reasoning,
+      byKind,
+      trend,
+    };
+  }
+
+  private recordScoreSnapshot(): void {
+    const snapshot = this.gauge().score;
+    this.scoreHistory.push(snapshot);
+    if (this.scoreHistory.length > 4) this.scoreHistory.shift();
   }
 
   /** Replay a full conversation and return an aggregated report. */
@@ -220,7 +315,7 @@ export class DriftMonitor {
       if (event.action === "rewrite") rewrites++;
       else flags++;
     }
-    return { events, registry: new Map(this.registry), byKind, rewrites, flags };
+    return { events, registry: new Map(this.registry), byKind, rewrites, flags, gauge: this.gauge() };
   }
 
   private findFuzzyMatch(candidate: string): FuzzyMatchResult | null {
@@ -332,6 +427,50 @@ function extractEntities(message: string): string[] {
     }
   }
   return out;
+}
+
+function scoreToLevel(score: number): DriftLevel {
+  if (score === 0) return "stable";
+  if (score <= 15) return "minor";
+  if (score <= 40) return "moderate";
+  if (score <= 70) return "elevated";
+  return "critical";
+}
+
+function computeTrend(history: number[]): "stable" | "increasing" | "decreasing" {
+  if (history.length < 2) return "stable";
+  const last = history[history.length - 1]!;
+  const prev = history[history.length - 2]!;
+  if (last > prev + 5) return "increasing";
+  if (last < prev - 5) return "decreasing";
+  return "stable";
+}
+
+function buildReasoning(
+  score: number,
+  level: DriftLevel,
+  recentEvents: number,
+  byKind: Record<DriftKind, number>,
+  trend: "stable" | "increasing" | "decreasing",
+  refreshRecommended: boolean,
+): string {
+  if (level === "stable") {
+    return "No drift in recent turns. Canonical vocabulary stable.";
+  }
+  const kinds = (Object.entries(byKind) as [DriftKind, number][])
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${k}=${n}`)
+    .join(", ");
+  const trendNote =
+    trend === "increasing" ? " — trending up" : trend === "decreasing" ? " — trending down" : "";
+  const refreshNote = refreshRecommended
+    ? " Consider refreshing canonical context (re-seed entities, prompt user to confirm key terms)."
+    : "";
+  return `${capitalize(level)} drift pressure (score ${score}, ${recentEvents} recent event${recentEvents === 1 ? "" : "s"}; total by kind: ${kinds})${trendNote}.${refreshNote}`;
+}
+
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 const LOWERCASE_WORD_PATTERN = /\b[a-z][a-z0-9]{2,}\b/g;
