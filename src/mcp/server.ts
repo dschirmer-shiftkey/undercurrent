@@ -85,7 +85,7 @@ export function createSlipstreamMcpServer(config: McpServerConfig): McpServer {
   const pilotProcessor = pilot ? new KomatikPilotProcessor(slipstream) : null;
 
   const server = new McpServer(
-    { name: "slipstream", version: "1.0.0" },
+    { name: "slipstream", version: "2.0.0" },
     { capabilities: { logging: {} } },
   );
 

@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-05-17
+
+### BREAKING
+
+- Renamed `Undercurrent` → `Slipstream` throughout. The package has been `@komatik/slipstream` since launch; the class and identity now match.
+  - Class: `Undercurrent` → `Slipstream`
+  - Config type: `UndercurrentConfig` → `SlipstreamConfig`
+  - MCP factory: `createUndercurrentMcpServer` → `createSlipstreamMcpServer`
+  - MCP server identity (handshake): `name: "undercurrent"` → `name: "slipstream"`
+  - npm bin: `undercurrent-mcp` → `slipstream-mcp`
+  - Express middleware property: `req.undercurrent` → `req.slipstream`
+  - Preserved: `undercurrent_settings` Komatik Supabase column (renaming would break the integration).
+
+### Added
+
+#### Context Reliability System foundations (PRs #56, #57)
+- Governance presets: `strict-governance`, `balanced`, `speed-first` (plus `safety-first` from 1.0.0)
+- Stale-context filtering, confidence gates, bounded assumptions per message
+- Stage-by-stage `EnrichmentTrace` events and `GovernanceSummary.interventions` in metadata
+- Replay-harness benchmarking: quality-per-token, governed vs unguided reliability metrics
+- MCP `enrich` accepts preset override and returns trace + governance metadata
+
+#### Production pilot path (PRs #60, #61, #69)
+- `KomatikPilotProcessor` wrapping `Slipstream.process()` with per-request ROI telemetry (latency split, token efficiency, governance interventions, blocked assumptions) and acceptance outcome tracking
+- MCP pilot tools: `process_with_pilot`, `record_pilot_outcome`, `get_pilot_roi_summary`
+- `runPilotSimulation()` end-to-end harness in `@komatik/slipstream/komatik` — wires Slipstream → `KomatikPilotProcessor` → `KomatikOutcomeWriter` with mock clients and stub caller for local iteration before porting to real products
+- CLI: `npm run playground:pilot -- --transcript X [--preset safety-first --verbose]`
+- Exposes `PilotSimulationOptions`, `PilotSimulationResult`, `PilotSimulationMessage` types
+
+#### CI reliability gate matrix (PRs #60, #68, #69)
+- `npm run eval:reliability` runs a (fixture × preset) matrix from `ci/reliability-matrix.json` with per-cell baselines and thresholds
+- 7 default cells covering `balanced` / `safety-first` / `strict-governance` presets across `reliability-ci`, `preflight-stress`, and `governance-stress` fixtures
+- New metrics target preflight regressions: `blockingClarificationRate` and `highCascadeRiskRate`
+- `npm run eval:reliability:single` preserves the single-cell mode; `npm run eval:reliability:update` regenerates baselines
+- New fixtures `fixtures/replay/preflight-stress.jsonl` and `fixtures/replay/governance-stress.jsonl`
+
+### Changed
+
+- **Safety-first preflight** (PR #67): tokenized negation detection and content-significance guards in the contradiction detector. Previously, substring matching on `"no"` / `"not"` / `"never"` fired false-positive contradictions on benign messages containing words like `node`, `notion`, `now`, `notes`. Combined with a 40%-overlap threshold over `Math.min(a, b)` that fired on a single shared word against small recent-decision sets, this produced 683 of the 783 blocking clarifications observed during 1.0.0 validation. The fix requires ≥3 content words on both sides and ≥2 shared words before computing the overlap ratio. Negation detection now tokenizes and checks set membership (including the multi-token `do not` and contractions like `cannot`/`cant`/`won't`/`shouldn't`).
+- **Reliability gate determinism** (PR #69): the matrix gate now uses `ConversationAdapter` only. Previously the `Git` and `Filesystem` adapters made the gate sensitive to repo state (any new file shifted token counts), masking real strategy/preset/preflight regressions. Restricting the gate to deterministic-by-transcript adapters surfaces the regressions it was designed to catch. Secondary effect: `strict-governance` now actually shows distinct metrics from `balanced` (1.2 interventions/msg, 100% blocked-assumption rate on governance-stress); previously that signal was hidden by adapter noise.
+
+### Fixed
+
+- ReDoS code-scanning alerts in parsing heuristics (PR #58)
+- Scanner-based parsing regression coverage to lock in the ReDoS fixes (PR #59)
+
 ## [1.0.0] - 2026-05-16
 
 ### Added
