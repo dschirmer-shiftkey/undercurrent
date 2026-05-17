@@ -27,6 +27,8 @@ export type {
   SessionEvent,
   SessionManagerConfig,
 } from "./session-manager.js";
+export { KomatikPreferenceClient } from "./preference-client.js";
+export type { KomatikPreferenceClientOptions } from "./preference-client.js";
 export type { KomatikModelUsageAdapterOptions } from "./model-usage-adapter.js";
 export { createMockClient, createMockWriteClient } from "./testing.js";
 export type { MockWriteLog } from "./testing.js";

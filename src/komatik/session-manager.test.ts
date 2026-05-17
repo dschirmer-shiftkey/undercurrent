@@ -23,21 +23,28 @@ function makeCaller(): ModelCallerFn {
   });
 }
 
-function makeManager(overrides: Partial<Parameters<typeof SlipstreamSessionManager.prototype.constructor>[0]> = {}) {
+interface ManagerOptions {
+  storedPrefs?: Record<string, unknown>[];
+  managerOverrides?: Partial<Parameters<typeof SlipstreamSessionManager.prototype.constructor>[0]>;
+}
+
+function makeManager(opts: ManagerOptions = {}) {
   const client = createMockClient({
     model_availability: MODEL_ROSTER,
     llm_usage: [],
     enrichment_outcomes: [],
+    user_preferences: opts.storedPrefs ?? [],
   });
   const { client: writeClient, writes } = createMockWriteClient({
     enrichment_outcomes: [],
+    user_preferences: opts.storedPrefs ?? [],
   });
   return {
     manager: new SlipstreamSessionManager({
       client,
       writeClient,
       caller: makeCaller(),
-      ...overrides,
+      ...(opts.managerOverrides ?? {}),
     }),
     writes,
   };
@@ -92,7 +99,7 @@ describe("SlipstreamSessionManager", () => {
     });
 
     it("falls back to defaultTierBias when user has none", async () => {
-      const { manager } = makeManager({ defaultTierBias: "budget" });
+      const { manager } = makeManager({ managerOverrides: { defaultTierBias: "budget" } });
       const handle = await manager.startSession({
         sessionId: "sess-1",
         scope: "sandbox",
@@ -159,7 +166,7 @@ describe("SlipstreamSessionManager", () => {
   describe("observability events", () => {
     it("emits session-started, model-selected, outcome-recorded, session-ended", async () => {
       const events: SessionEvent[] = [];
-      const { manager } = makeManager({ onSessionEvent: (e) => events.push(e) });
+      const { manager } = makeManager({ managerOverrides: { onSessionEvent: (e) => events.push(e) } });
 
       await manager.startSession({ sessionId: "sess-1", scope: "project", user: { id: "u" } });
       const r = await manager.process({ sessionId: "sess-1", message: "hello" });
@@ -176,8 +183,10 @@ describe("SlipstreamSessionManager", () => {
     it("emits drift-elevated when the drift gauge crosses threshold", async () => {
       const events: SessionEvent[] = [];
       const { manager } = makeManager({
-        driftRefreshThreshold: 10,
-        onSessionEvent: (e) => events.push(e),
+        managerOverrides: {
+          driftRefreshThreshold: 10,
+          onSessionEvent: (e) => events.push(e),
+        },
       });
       await manager.startSession({
         sessionId: "sess-1",
@@ -193,6 +202,84 @@ describe("SlipstreamSessionManager", () => {
 
       const elevated = events.filter((e) => e.kind === "drift-elevated");
       expect(elevated.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("stored tier_bias preference (piece 2)", () => {
+    it("startSession uses the user's stored tier_bias when no override is passed", async () => {
+      const { manager } = makeManager({
+        storedPrefs: [
+          { user_id: "u-1", undercurrent_settings: { tier_bias: "premier" } },
+        ],
+      });
+      const handle = await manager.startSession({
+        sessionId: "sess-1",
+        scope: "project",
+        user: { id: "u-1" },
+      });
+      expect(handle.tierBias).toBe("premier");
+    });
+
+    it("explicit override on startSession beats the stored preference", async () => {
+      const { manager } = makeManager({
+        storedPrefs: [
+          { user_id: "u-1", undercurrent_settings: { tier_bias: "premier" } },
+        ],
+      });
+      const handle = await manager.startSession({
+        sessionId: "sess-1",
+        scope: "project",
+        user: { id: "u-1", tierBias: "budget" },
+      });
+      expect(handle.tierBias).toBe("budget");
+    });
+
+    it("falls back to defaultTierBias when neither override nor stored preference exists", async () => {
+      const { manager } = makeManager({
+        managerOverrides: { defaultTierBias: "premier" },
+      });
+      const handle = await manager.startSession({
+        sessionId: "sess-1",
+        scope: "sandbox",
+        user: { id: "u-1" },
+      });
+      expect(handle.tierBias).toBe("premier");
+    });
+
+    it("setTierBias persists the choice and caches it for the next startSession", async () => {
+      const { manager, writes } = makeManager();
+      await manager.setTierBias("u-1", "budget");
+
+      expect(writes.user_preferences?.upserts).toHaveLength(1);
+      const upsert = writes.user_preferences!.upserts[0]!;
+      expect(upsert.undercurrent_settings).toEqual({ tier_bias: "budget" });
+
+      // Cache hit — next startSession reads the value without hitting the DB.
+      const handle = await manager.startSession({
+        sessionId: "sess-1",
+        scope: "sandbox",
+        user: { id: "u-1" },
+      });
+      expect(handle.tierBias).toBe("budget");
+    });
+
+    it("getStoredTierBias returns the cached value after setTierBias", async () => {
+      const { manager } = makeManager();
+      expect(await manager.getStoredTierBias("u-1")).toBeNull();
+      await manager.setTierBias("u-1", "premier");
+      expect(await manager.getStoredTierBias("u-1")).toBe("premier");
+    });
+
+    it("invalidateTierBiasCache forces the next read to hit the DB", async () => {
+      const { manager } = makeManager({
+        storedPrefs: [
+          { user_id: "u-1", undercurrent_settings: { tier_bias: "premier" } },
+        ],
+      });
+      await manager.getStoredTierBias("u-1");
+      manager.invalidateTierBiasCache("u-1");
+      // After invalidation, getStoredTierBias re-queries — value still resolves.
+      expect(await manager.getStoredTierBias("u-1")).toBe("premier");
     });
   });
 

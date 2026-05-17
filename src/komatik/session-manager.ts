@@ -7,6 +7,7 @@ import type { DriftGauge } from "../engine/drift-monitor.js";
 import { KomatikPilotProcessor } from "./pilot.js";
 import type { PilotOutcome, PilotRoiSummary, PilotProcessTelemetry } from "./pilot.js";
 import { KomatikOutcomeWriter } from "./outcome-writer.js";
+import { KomatikPreferenceClient } from "./preference-client.js";
 import type {
   ConversationTurn,
   EnrichedPrompt,
@@ -39,7 +40,11 @@ export interface SessionStartInput {
   scope: SessionScope;
   user: {
     id: string;
-    /** Per-user preference override; falls back to manager's defaultTierBias. */
+    /**
+     * Optional explicit override. Takes precedence over the user's stored
+     * `tier_bias` preference. Useful for per-session experimentation or
+     * when the IDE has just-changed the user's tier via UI.
+     */
     tierBias?: TierBias;
   };
   /** Optional initial conversation (e.g., resumed session). */
@@ -148,6 +153,9 @@ export class SlipstreamSessionManager {
     SessionManagerConfig;
   private readonly sessions = new Map<string, SessionState>();
   private readonly emittedDriftElevated = new Set<string>();
+  private readonly preferenceClient: KomatikPreferenceClient;
+  /** In-memory tier-bias cache per user. Avoids re-querying user_preferences for repeat sessions. */
+  private readonly tierBiasCache = new Map<string, TierBias | null>();
 
   constructor(config: SessionManagerConfig) {
     this.config = {
@@ -156,6 +164,10 @@ export class SlipstreamSessionManager {
       defaultPlatform: "cursor",
       ...config,
     };
+    this.preferenceClient = new KomatikPreferenceClient({
+      client: config.client,
+      writeClient: config.writeClient,
+    });
   }
 
   /** Start a new session. Sandbox sessions skip outcome persistence. */
@@ -163,7 +175,20 @@ export class SlipstreamSessionManager {
     if (this.sessions.has(input.sessionId)) {
       throw new Error(`SlipstreamSessionManager: session ${input.sessionId} already started.`);
     }
-    const tierBias = input.user.tierBias ?? this.config.defaultTierBias;
+    // Resolve tier bias in priority order:
+    //   1. explicit override on the input (IDE just-changed it)
+    //   2. stored user preference (cached after first read)
+    //   3. manager-level default
+    let tierBias: TierBias;
+    if (input.user.tierBias) {
+      tierBias = input.user.tierBias;
+      // An explicit override updates the cache so subsequent sessions for
+      // the same user reflect the latest choice without re-querying.
+      this.tierBiasCache.set(input.user.id, tierBias);
+    } else {
+      const stored = await this.resolveStoredTierBias(input.user.id);
+      tierBias = stored ?? this.config.defaultTierBias;
+    }
     const handle: SessionHandle = {
       sessionId: input.sessionId,
       scope: input.scope,
@@ -321,6 +346,44 @@ export class SlipstreamSessionManager {
   /** Returns true if a session with this ID is active. */
   hasSession(sessionId: string): boolean {
     return this.sessions.has(sessionId);
+  }
+
+  /**
+   * Persist a tier bias choice for a user. Writes to `user_preferences`
+   * so the value sticks across sessions and devices. Use from the IDE
+   * tier-override UI; subsequent `startSession()` calls without an
+   * explicit override will pick this up.
+   *
+   * Existing in-progress sessions are NOT updated — tier bias is locked
+   * at session-start time. End and restart the session to apply.
+   */
+  async setTierBias(userId: string, tier: TierBias): Promise<void> {
+    await this.preferenceClient.setTierBias(userId, tier);
+    this.tierBiasCache.set(userId, tier);
+  }
+
+  /**
+   * Returns the stored tier bias for a user (cached). Returns null when
+   * the user has no stored preference yet — caller should fall back to
+   * `defaultTierBias`.
+   */
+  async getStoredTierBias(userId: string): Promise<TierBias | null> {
+    return this.resolveStoredTierBias(userId);
+  }
+
+  /** Clear the cached tier bias for a user; next read hits the DB. */
+  invalidateTierBiasCache(userId?: string): void {
+    if (userId) this.tierBiasCache.delete(userId);
+    else this.tierBiasCache.clear();
+  }
+
+  private async resolveStoredTierBias(userId: string): Promise<TierBias | null> {
+    if (this.tierBiasCache.has(userId)) {
+      return this.tierBiasCache.get(userId) ?? null;
+    }
+    const stored = await this.preferenceClient.getTierBias(userId);
+    this.tierBiasCache.set(userId, stored);
+    return stored;
   }
 
   private requireSession(sessionId: string): SessionState {
