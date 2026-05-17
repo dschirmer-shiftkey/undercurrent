@@ -26,6 +26,7 @@ import type {
   SessionHealth,
   TargetPlatform,
   TierRecommendation,
+  TierBiasLearnerInterface,
   TokenAccounting,
   SlipstreamConfig,
   HealthCheckResult,
@@ -68,6 +69,7 @@ export class Pipeline {
   private readonly modelRouter: ModelRouter | null;
   private readonly modelRouterConfig: ModelRouterConfig | null;
   private readonly modelUsageAdapter: KomatikModelUsageAdapter | null;
+  private readonly tierBiasLearner: TierBiasLearnerInterface | null;
   private lastContext: ContextLayer[] = [];
   private readonly recentEnrichmentTokens: number[] = [];
   private readonly defaultPreset: GovernancePreset;
@@ -127,6 +129,8 @@ export class Pipeline {
       this.modelRouter = null;
       this.modelUsageAdapter = null;
     }
+
+    this.tierBiasLearner = config.tierBiasLearner ?? null;
   }
 
   setHooks(hooks: PipelineHooks): void {
@@ -223,6 +227,37 @@ export class Pipeline {
     };
   }
 
+  /**
+   * Feed an accept/reject outcome back to the tier-bias learner so future
+   * recommendations can incorporate per-user signal. No-op when no learner
+   * is configured.
+   */
+  recordTierOutcome(input: {
+    tier: import("../types.js").CostTier;
+    accepted: boolean;
+    userId?: string;
+    domain?: string;
+  }): void {
+    this.tierBiasLearner?.recordOutcome(input);
+  }
+
+  private applyTierBias(
+    base: TierRecommendation,
+    enrichmentContext?: Record<string, unknown>,
+  ): TierRecommendation {
+    if (!this.tierBiasLearner) return base;
+    const userId =
+      typeof enrichmentContext?.userId === "string" ? enrichmentContext.userId : undefined;
+    const domain =
+      typeof enrichmentContext?.domain === "string" ? enrichmentContext.domain : undefined;
+    try {
+      return this.tierBiasLearner.adjust(base, { userId, domain });
+    } catch (err) {
+      this.log("tierBiasLearner.adjust threw — falling back to heuristic", err);
+      return base;
+    }
+  }
+
   async enrich(input: EnrichInput): Promise<EnrichedPrompt> {
     const start = performance.now();
     const conversation = input.conversation ?? [];
@@ -286,7 +321,7 @@ export class Pipeline {
     this.pushTrace("classify", "depth_selected", `Selected enrichment depth: ${depth}.`);
 
     if (depth === "none") {
-      const result = this.passthrough(originalMessage, activeMessage, intent, start, platform, policy.preset, preflight);
+      const result = this.passthrough(originalMessage, activeMessage, intent, start, platform, policy.preset, preflight, input.enrichmentContext);
       this.trackSession(activeMessage, conversation, result.enrichedMessage);
       return result;
     }
@@ -389,7 +424,10 @@ export class Pipeline {
         budget: this.computeBudget(tokens),
         governance: governanceSummary,
         preflight,
-        tierRecommendation: recommendTier(intent, depth),
+        tierRecommendation: this.applyTierBias(
+          recommendTier(intent, depth),
+          input.enrichmentContext,
+        ),
         degradation: this.computeDegradation(adapterResults, context.length),
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
@@ -614,6 +652,7 @@ export class Pipeline {
     platform: TargetPlatform,
     preset: GovernancePreset,
     preflight?: PreflightResult,
+    enrichmentContext?: Record<string, unknown>,
   ): EnrichedPrompt {
     const tokens = this.computeTokens(originalMessage, passthroughMessage, []);
     this.recordEnrichmentTokens(tokens.enrichedMessage + tokens.context);
@@ -645,7 +684,10 @@ export class Pipeline {
           interventions: [],
         },
         preflight,
-        tierRecommendation: recommendTier(intent, "none"),
+        tierRecommendation: this.applyTierBias(
+          recommendTier(intent, "none"),
+          enrichmentContext,
+        ),
         degradation: undefined, // passthrough never touches adapters
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }

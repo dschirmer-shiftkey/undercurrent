@@ -230,6 +230,21 @@ export interface TierRecommendation {
     emotionalLoad: EmotionalLoad;
     enrichmentDepth: EnrichmentMetadata["enrichmentDepth"];
   };
+  /**
+   * Present when a `TierBiasLearner` adjusted the heuristic recommendation
+   * based on observed acceptance signal. Absent on the raw heuristic path.
+   * Lets hosts / telemetry distinguish "Slipstream picked premium because
+   * intent looked complex" from "Slipstream picked premium because user
+   * historically accepted premium more often."
+   */
+  biasAdjustment?: {
+    /** What the heuristic recommended before the learner adjusted. */
+    originalTier: CostTier;
+    /** Which adjustment policy fired (low-acceptance-flip / mid-range-confidence-penalty / high-acceptance-boost). */
+    appliedReason: string;
+    /** Observed acceptance rates per tier (only tiers with data are present). */
+    observedAcceptance: Partial<Record<CostTier, number>>;
+  };
 }
 
 /**
@@ -400,6 +415,21 @@ export interface SlipstreamConfig {
   suggestions?: SuggestionsConfig;
   /** When set, every enrichment auto-persists a telemetry row to enrichment_outcomes. */
   outcomeWriter?: OutcomeWriterConfig;
+  /**
+   * Optional tier-bias learner that adjusts `metadata.tierRecommendation`
+   * based on observed per-user / per-tier acceptance. When omitted, the
+   * recommendation is the pure heuristic from `recommendTier()`. Pair with
+   * `Slipstream.recordTierOutcome()` to feed acceptance signal back.
+   */
+  tierBiasLearner?: TierBiasLearnerInterface;
+}
+
+// Forward declaration so SlipstreamConfig can reference the learner type
+// without pulling the implementation into this file.
+export interface TierBiasLearnerInterface {
+  adjust(base: TierRecommendation, ctx: { userId?: string; domain?: string }): TierRecommendation;
+  recordOutcome(input: { tier: CostTier; accepted: boolean; userId?: string; domain?: string }): void;
+  getStats(ctx?: { userId?: string; domain?: string }): unknown;
 }
 
 export interface OutcomeWriterConfig {
