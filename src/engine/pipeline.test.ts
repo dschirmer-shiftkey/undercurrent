@@ -10,10 +10,10 @@ import type {
   Gap,
   GapResolution,
   IntentSignal,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "../types.js";
 
-function makeConfig(overrides: Partial<UndercurrentConfig> = {}): UndercurrentConfig {
+function makeConfig(overrides: Partial<SlipstreamConfig> = {}): SlipstreamConfig {
   return {
     adapters: [],
     strategy: new DefaultStrategy(),

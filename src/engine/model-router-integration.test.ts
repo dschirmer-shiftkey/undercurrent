@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Undercurrent } from "../index.js";
+import { Slipstream } from "../index.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import { createMockClient } from "../komatik/testing.js";
 import type {
@@ -7,7 +7,7 @@ import type {
   ModelCallerInput,
   ModelCallerOutput,
   ModelRecommendation,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "../types.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ function mockCaller(): ModelCallerFn {
   );
 }
 
-function makeConfig(overrides: Partial<UndercurrentConfig> = {}): UndercurrentConfig {
+function makeConfig(overrides: Partial<SlipstreamConfig> = {}): SlipstreamConfig {
   const client = createMockClient({
     model_availability: [
       {
@@ -207,7 +207,7 @@ function makeConfig(overrides: Partial<UndercurrentConfig> = {}): UndercurrentCo
 describe("process() integration", () => {
   it("enriches, routes, and calls the model in one flow", async () => {
     const config = makeConfig();
-    const uc = new Undercurrent(config);
+    const uc = new Slipstream(config);
 
     const result = await uc.process({
       message: "refactor the authentication module to use JWT tokens",
@@ -234,7 +234,7 @@ describe("process() integration", () => {
 
   it("only returns active models (excludes deprecated)", async () => {
     const config = makeConfig();
-    const uc = new Undercurrent(config);
+    const uc = new Slipstream(config);
 
     const result = await uc.process({
       message: "build a new React component for the dashboard",
@@ -252,7 +252,7 @@ describe("process() integration", () => {
 
   it("attaches modelRecommendation to enrichment metadata", async () => {
     const config = makeConfig();
-    const uc = new Undercurrent(config);
+    const uc = new Slipstream(config);
 
     const result = await uc.process({
       message: "write a blog post about context engineering",
@@ -267,7 +267,7 @@ describe("process() integration", () => {
     const config = makeConfig();
     config.modelRouter!.onModelSelected = onModelSelected;
 
-    const uc = new Undercurrent(config);
+    const uc = new Slipstream(config);
     await uc.process({ message: "fix the null pointer bug in the API handler" });
 
     expect(onModelSelected).toHaveBeenCalledTimes(1);
@@ -277,7 +277,7 @@ describe("process() integration", () => {
   });
 
   it("throws when process() is called without modelRouter config", async () => {
-    const uc = new Undercurrent({
+    const uc = new Slipstream({
       adapters: [],
       strategy: new DefaultStrategy(),
     });
@@ -286,7 +286,7 @@ describe("process() integration", () => {
   });
 
   it("enrich() still works independently without modelRouter", async () => {
-    const uc = new Undercurrent({
+    const uc = new Slipstream({
       adapters: [],
       strategy: new DefaultStrategy(),
     });
@@ -298,7 +298,7 @@ describe("process() integration", () => {
 
   it("passes conversation history to the model caller", async () => {
     const config = makeConfig();
-    const uc = new Undercurrent(config);
+    const uc = new Slipstream(config);
 
     const conversation = [
       { role: "user" as const, content: "I need help with the API" },
@@ -393,7 +393,7 @@ describe("process() integration", () => {
       },
     });
 
-    const uc = new Undercurrent(config);
+    const uc = new Slipstream(config);
     const result = await uc.process({
       message: "write a creative marketing headline for our new product launch",
     });

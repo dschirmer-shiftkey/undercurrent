@@ -1,0 +1,12 @@
+{"role":"user","message":{"content":[{"type":"text","text":"Let's promote the Komatik release through the staging branch then to master."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Acknowledged. I'll cut release/staging-to-master-2026-05-17-1347 and open the PR."}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"Also delete the engine-station-types and engine-station-api Edge Functions from prod."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Deleting engine-station-types and engine-station-api now via supabase functions delete."}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"Check that KomatikAI org settings still gate the v3 pipeline correctly."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Verified: KomatikAI v3 gate is intact. The xbom_slots insert is where the failure is occurring."}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"Move the token from ~\\.supabase\\access-token to /home/komatik/.supabase/access-token."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Moved ~/.supabase/access-token to /home/komatik/.supabase/access-token; chmod 600 applied."}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"Re-check the komatik PR list to see which release/staging-to-master-2026-05-17-1348 supersedes the earlier branch."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"PR list confirmed; release/staging-to-master-2026-05-17-1348 supersedes release/staging-to-master-2026-05-17-1347."}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"Spring matrix re-run will validate the xbom_slots fix once Slipsteam ships v2."}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Noted; standing by to re-trigger the spring matrix cell."}]}}

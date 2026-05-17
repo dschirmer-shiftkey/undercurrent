@@ -625,9 +625,9 @@ Runtime state lives in PostgreSQL, not in git-committed files.
 <!-- Add project-specific Claude Code instructions below this line -->
 <!-- These sections are preserved across re-distributions -->
 
-### Undercurrent — Developer Context
+### Slipstream — Developer Context
 
-**What this is**: Undercurrent (`@komatik/slipstream`) — a context engineering and personalization SDK. 4-stage pipeline that invisibly transforms vague human messages into structured, context-rich prompts before the model sees them. Internally we call it the "translation device."
+**What this is**: Slipstream (`@komatik/slipstream`) — a context engineering and personalization SDK. 4-stage pipeline that invisibly transforms vague human messages into structured, context-rich prompts before the model sees them. Internally we call it the "translation device."
 
 **Stack**: TypeScript 6.0+, ESM-only, Node 20+, zero runtime dependencies. Dev deps: vitest, typescript, @types/node, @modelcontextprotocol/sdk, zod.
 
@@ -645,7 +645,7 @@ npm run replay      # Batch transcript replay with reports (tsx)
 ```
 src/
 ├── types.ts                 # THE protocol — read first before any work
-├── index.ts                 # Public API (Undercurrent class + re-exports)
+├── index.ts                 # Public API (Slipstream class + re-exports)
 ├── engine/
 │   ├── pipeline.ts          # 4-stage pipeline: classify → harvest → analyze → compose + process()
 │   ├── session-monitor.ts   # Session health tracking (cold-start → healthy → degrading → critical)
@@ -672,7 +672,7 @@ src/
 ├── mcp/                     # External MCP server (@komatik/slipstream/mcp)
 │   ├── postgrest-client.ts  # Lightweight PostgREST adapter (native fetch, no Supabase SDK)
 │   ├── server.ts            # McpServer: 2 tools, 7 resources, 1 prompt
-│   └── index.ts             # Bin entry (undercurrent-mcp) — reads env vars, stdio transport
+│   └── index.ts             # Bin entry (slipstream-mcp) — reads env vars, stdio transport
 ├── strategies/              # Pluggable enrichment logic
 │   ├── default.ts           # Heuristic (no LLM, deterministic) — reference impl
 │   ├── llm.ts               # LLM-assisted strategy (pluggable llmCall callback, DefaultStrategy fallback)
@@ -708,13 +708,13 @@ src/
   - `KomatikMemoryAdapter` → `session_memories` — cross-session persistent context (decisions, active work, unresolved items)
 
 **External MCP server** (`src/mcp/`):
-- Exposes Undercurrent to Cursor, Claude, AntiGravity via stdio MCP transport
+- Exposes Slipstream to Cursor, Claude, AntiGravity via stdio MCP transport
 - Tools: `enrich` (full pipeline, accepts `platform` param), `get_context` (raw context layers)
 - Resources (7): `komatik://user/profile`, `komatik://user/preferences`, `komatik://user/memory`, `komatik://user/history`, `komatik://user/outcomes`, `komatik://user/projects`, `komatik://user/tools`
 - Prompts: `enrich-message` (system prompt pre-loaded with full user context from all 7 adapters)
 - `PostgREST client` — lightweight `KomatikDataClient` using native `fetch`, no `@supabase/supabase-js`
 - Env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATIK_USER_ID`
-- Import from `@komatik/slipstream/mcp`; bin: `undercurrent-mcp`
+- Import from `@komatik/slipstream/mcp`; bin: `slipstream-mcp`
 
 **Platform-aware composition** (`src/strategies/platform-composer.ts`):
 - Formats enriched output differently per target platform via `TargetPlatform` type
@@ -747,15 +747,15 @@ src/
 - `KomatikSessionWriter` (`src/komatik/session-writer.ts`) implements persistence to Komatik's `session_memories` table via `KomatikWriteClient`
 - Pipeline auto-restores context on cold starts (empty conversation + existing snapshot), auto-compacts on degradation/critical health
 - `HandoffArtifact` — structured document for cross-session continuity (completed work, active work, decisions, next steps, terminology)
-- Config: `UndercurrentConfig.sessionMonitor` with `tokenBudget`, `checkpointInterval`, `compactionThreshold`, `writer`, `compactorLlmCall`
+- Config: `SlipstreamConfig.sessionMonitor` with `tokenBudget`, `checkpointInterval`, `compactionThreshold`, `writer`, `compactorLlmCall`
 
 **Intelligent Model Router** (`src/engine/model-router.ts`, `src/komatik/model-usage-adapter.ts`):
-- Per-user, per-domain model selection — Komatik internal first, opt-in via `UndercurrentConfig.modelRouter`
+- Per-user, per-domain model selection — Komatik internal first, opt-in via `SlipstreamConfig.modelRouter`
 - `TaskDomainClassifier` maps `IntentSignal` to 6 domains: coding, creative, analysis, planning, debugging, conversation (heuristic, no LLM needed)
 - `ModelScorer` ranks active models: `score = (w1 * successRate) + (w2 * acceptanceRate) + (w3 * (1 - normLatency)) + (w4 * affinityBonus)` — affinity weight auto-decays from 0.25 to 0.05 as real data exceeds 50 points
 - Default affinities: coding → Anthropic/OpenAI, creative → Google/Anthropic, analysis → OpenAI/Google
 - `KomatikModelUsageAdapter` queries three tables: `model_availability` (active roster from Tracker agent), `llm_usage` (success/latency/cost per model per user), `enrichment_outcomes` (acceptance rate per provider)
-- `Undercurrent.process(input)` = enrich → classify domain → load scoring data → rank models → call top model via pluggable `ModelCallerFn` → return `ProcessResult`
+- `Slipstream.process(input)` = enrich → classify domain → load scoring data → rank models → call top model via pluggable `ModelCallerFn` → return `ProcessResult`
 - `enrich()` unchanged; `process()` is additive; zero new runtime dependencies
 - Komatik products pass their existing LLM gateway function as the `caller` callback
 - `ModelRecommendation` includes confidence (0-1), human-readable reasoning, data points count

@@ -656,7 +656,7 @@ export class KomatikPipelineStrategy implements EnrichmentStrategy {
   ): Promise<string> {
     if (!this.llmCall) return this.heuristicCompose(message, enrichment, context, assumptions);
 
-    const systemPrompt = `You are Undercurrent, a translation layer that converts vague project descriptions into structured specifications for the Komatik development pipeline.
+    const systemPrompt = `You are Slipstream, a translation layer that converts vague project descriptions into structured specifications for the Komatik development pipeline.
 
 Given the user's original message and the enrichment data below, produce a clear, structured project specification that a development team can act on. Include: project name, type, domain, platform, tech stack, features (with descriptions), constraints, and any assumptions you're making.
 
