@@ -71,6 +71,7 @@
     "playground:pilot": "tsx src/playground/pilot.ts",
     "playground:drift": "tsx src/playground/drift.ts",
     "playground:session": "tsx src/playground/session-manager-demo.ts",
+    "playground:acceptance": "tsx src/playground/acceptance-demo.ts",
     "replay": "tsx src/playground/replay.ts",
     "eval:reliability": "tsx src/playground/reliability-gate.ts --matrix ci/reliability-matrix.json",
     "eval:reliability:single": "tsx src/playground/reliability-gate.ts --baseline ci/reliability-baseline.json --transcript fixtures/replay/reliability-ci.jsonl --platform generic",

@@ -30,6 +30,15 @@ export type {
 } from "./session-manager.js";
 export { KomatikPreferenceClient } from "./preference-client.js";
 export type { KomatikPreferenceClientOptions } from "./preference-client.js";
+export { runAcceptanceHarness } from "./acceptance-harness.js";
+export type {
+  HarnessMessage,
+  HarnessConfig,
+  HarnessOptions,
+  HarnessRunResult,
+  HarnessComparison,
+  SimulatedModel,
+} from "./acceptance-harness.js";
 export type { KomatikModelUsageAdapterOptions } from "./model-usage-adapter.js";
 export { createMockClient, createMockWriteClient } from "./testing.js";
 export type { MockWriteLog } from "./testing.js";
