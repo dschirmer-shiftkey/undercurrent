@@ -315,17 +315,22 @@ Slipstream ships a replay-based reliability gate that can block merges on regres
 - token-multiplier ceiling
 - governance intervention bounds
 - blocked-assumption rate ceiling
+- preflight blocking-clarification rate ceiling (catches safety-first regressions)
+- cascade-risk classification rate ceiling
+
+The gate runs a **matrix of (fixture × preset)** cells from `ci/reliability-matrix.json`. Each cell has its own baseline and thresholds, so a regression in any preset path fails the gate. Current matrix covers `reliability-ci`, `preflight-stress`, and `governance-stress` fixtures across `balanced`, `safety-first`, and `strict-governance` presets.
 
 Run locally:
 
 ```bash
-npm run eval:reliability
+npm run eval:reliability               # matrix mode (default, CI)
+npm run eval:reliability:single        # original single-cell mode
 ```
 
-Refresh baseline intentionally (after approved behavior changes):
+Refresh baselines intentionally (after approved behavior changes):
 
 ```bash
-npm run eval:reliability -- --write-baseline
+npm run eval:reliability:update        # regenerates every cell in the matrix
 ```
 
 ### Platform-Aware Composition
