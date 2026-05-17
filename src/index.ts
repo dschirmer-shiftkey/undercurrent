@@ -79,11 +79,46 @@ export class Undercurrent {
   }
 
   async enrich(input: EnrichInput): Promise<EnrichedPrompt> {
-    return this.pipeline.enrich(input);
+    const result = await this.pipeline.enrich(input);
+    await this.persistOutcome(result);
+    return result;
   }
 
   async process(input: EnrichInput): Promise<ProcessResult> {
     return this.pipeline.process(input);
+  }
+
+  /**
+   * Record a user verdict for a previous enrichment.
+   * Requires outcomeWriter to be configured.
+   */
+  async recordVerdict(input: {
+    enrichmentId: string;
+    verdict: "accepted" | "rejected" | "revised" | "ignored";
+    assumptionsAccepted?: string[];
+    assumptionsCorrected?: string[];
+    correctionDetails?: Record<string, unknown>;
+  }): Promise<void> {
+    const ow = this.config.outcomeWriter;
+    if (!ow) return;
+    await ow.writer.recordVerdict(input);
+  }
+
+  private async persistOutcome(result: EnrichedPrompt): Promise<void> {
+    const ow = this.config.outcomeWriter;
+    if (!ow) return;
+    try {
+      await ow.writer.writeEnrichmentRecord(
+        result.metadata.enrichmentId,
+        result,
+        {
+          sessionId: ow.sessionId,
+          workspaceId: ow.workspaceId,
+        },
+      );
+    } catch {
+      // Non-fatal — enrichment telemetry loss is acceptable
+    }
   }
 
   async suggestFollowups(input: SuggestionInput): Promise<SuggestionResult> {
@@ -132,6 +167,7 @@ export { ModelRouter, TaskDomainClassifier, ModelScorer } from "./engine/model-r
 export { Suggester } from "./engine/suggester.js";
 export { analyzeResponse } from "./engine/response-signals.js";
 export { KomatikPilotProcessor } from "./komatik/pilot.js";
+export { KomatikOutcomeWriter } from "./komatik/outcome-writer.js";
 
 export type {
   Action,
@@ -186,6 +222,10 @@ export type {
   EnrichmentTraceEvent,
   TraceStage,
   ObservabilityConfig,
+  OutcomeVerdict,
+  OutcomeVerdictInput,
+  OutcomeWriter,
+  OutcomeWriterConfig,
   TaskDomain,
   TargetPlatform,
   UndercurrentConfig,

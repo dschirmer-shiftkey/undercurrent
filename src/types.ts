@@ -133,6 +133,8 @@ export interface AdapterResult {
 }
 
 export interface EnrichmentMetadata {
+  /** Stable unique ID for this enrichment, used to link outcome verdicts. */
+  enrichmentId: string;
   pipelineVersion: string;
   enrichmentDepth: "none" | "light" | "standard" | "deep";
   processingTimeMs: number;
@@ -261,6 +263,46 @@ export interface UndercurrentConfig {
   sessionMonitor?: SessionMonitorConfig;
   modelRouter?: ModelRouterConfig;
   suggestions?: SuggestionsConfig;
+  /** When set, every enrichment auto-persists a telemetry row to enrichment_outcomes. */
+  outcomeWriter?: OutcomeWriterConfig;
+}
+
+export interface OutcomeWriterConfig {
+  /** The writer instance that persists enrichment records and verdicts. */
+  writer: OutcomeWriter;
+  /** Optional session ID to tag on every record. */
+  sessionId?: string;
+  /** Optional workspace ID. */
+  workspaceId?: string;
+}
+
+// ─── Outcome Writer ─────────────────────────────────────────────────────────
+// Interface for persisting enrichment outcomes and recording user verdicts.
+// KomatikOutcomeWriter implements this against the enrichment_outcomes table.
+
+export type OutcomeVerdict = "accepted" | "rejected" | "revised" | "ignored";
+
+export interface OutcomeVerdictInput {
+  enrichmentId: string;
+  verdict: OutcomeVerdict;
+  assumptionsAccepted?: string[];
+  assumptionsCorrected?: string[];
+  correctionDetails?: Record<string, unknown>;
+}
+
+export interface OutcomeWriter {
+  writeEnrichmentRecord(
+    enrichmentId: string,
+    enriched: EnrichedPrompt,
+    extra?: {
+      platform?: string;
+      sessionId?: string;
+      modelUsed?: string;
+      workspaceId?: string;
+    },
+  ): Promise<void>;
+
+  recordVerdict(input: OutcomeVerdictInput): Promise<void>;
 }
 
 // ─── Adapter Interface ──────────────────────────────────────────────────────

@@ -8,8 +8,10 @@ export { KomatikMemoryAdapter } from "./memory-adapter.js";
 export { KomatikSessionWriter } from "./session-writer.js";
 export { KomatikModelUsageAdapter } from "./model-usage-adapter.js";
 export { KomatikPilotProcessor } from "./pilot.js";
+export { KomatikOutcomeWriter } from "./outcome-writer.js";
 export type { KomatikModelUsageAdapterOptions } from "./model-usage-adapter.js";
-export { createMockClient } from "./testing.js";
+export { createMockClient, createMockWriteClient } from "./testing.js";
+export type { MockWriteLog } from "./testing.js";
 
 export type {
   PilotRequestContext,

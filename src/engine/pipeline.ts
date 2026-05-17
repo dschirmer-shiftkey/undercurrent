@@ -27,6 +27,7 @@ import type {
   TokenAccounting,
   UndercurrentConfig,
 } from "../types.js";
+import { randomUUID } from "node:crypto";
 import { Checkpointer } from "./checkpointer.js";
 import { Compactor } from "./compactor.js";
 import { ModelRouter } from "./model-router.js";
@@ -263,6 +264,7 @@ export class Pipeline {
       clarifications: clarifications.slice(0, this.maxClarifications),
       enrichedMessage,
       metadata: {
+        enrichmentId: randomUUID(),
         pipelineVersion: PIPELINE_VERSION,
         enrichmentDepth: depth,
         processingTimeMs: performance.now() - start,
@@ -455,6 +457,7 @@ export class Pipeline {
       clarifications: [],
       enrichedMessage: message,
       metadata: {
+        enrichmentId: randomUUID(),
         pipelineVersion: PIPELINE_VERSION,
         enrichmentDepth: "none",
         processingTimeMs: performance.now() - startTime,

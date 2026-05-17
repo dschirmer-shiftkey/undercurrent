@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { EnrichInput } from "../engine/pipeline.js";
-import type { ProcessResult } from "../types.js";
+import type { OutcomeWriter, ProcessResult } from "../types.js";
 
 export interface PilotRequestContext {
   sourceApp: "forge" | "triage" | "floe" | "platform" | string;
@@ -64,12 +64,22 @@ export interface PilotProcessResult extends ProcessResult {
 export class KomatikPilotProcessor {
   private readonly invoker: ProcessInvoker;
   private readonly sink?: PilotTelemetrySink;
+  private readonly outcomeWriter?: OutcomeWriter;
   private readonly processEvents: PilotProcessTelemetry[] = [];
   private readonly outcomes = new Map<string, PilotOutcome>();
 
-  constructor(invoker: ProcessInvoker, sink?: PilotTelemetrySink) {
+  constructor(
+    invoker: ProcessInvoker,
+    sinkOrOptions?: PilotTelemetrySink | { sink?: PilotTelemetrySink; outcomeWriter?: OutcomeWriter },
+  ) {
     this.invoker = invoker;
-    this.sink = sink;
+    if (sinkOrOptions && "outcomeWriter" in sinkOrOptions) {
+      const opts = sinkOrOptions as { sink?: PilotTelemetrySink; outcomeWriter?: OutcomeWriter };
+      this.sink = opts.sink;
+      this.outcomeWriter = opts.outcomeWriter;
+    } else if (sinkOrOptions) {
+      this.sink = sinkOrOptions as PilotTelemetrySink;
+    }
   }
 
   async process(input: EnrichInput, context: PilotRequestContext): Promise<PilotProcessResult> {
@@ -116,6 +126,18 @@ export class KomatikPilotProcessor {
     this.processEvents.push(telemetry);
     await this.sink?.onProcessTelemetry?.(telemetry);
 
+    if (this.outcomeWriter) {
+      try {
+        await this.outcomeWriter.writeEnrichmentRecord(requestId, result.enrichedPrompt, {
+          platform: context.sourceApp,
+          sessionId: context.sessionId,
+          modelUsed: result.modelResponse.model,
+        });
+      } catch {
+        // Non-fatal — telemetry loss is acceptable, don't break the request
+      }
+    }
+
     return {
       ...result,
       pilotTelemetry: telemetry,
@@ -127,6 +149,9 @@ export class KomatikPilotProcessor {
     accepted: boolean;
     reason?: string;
     at?: number;
+    assumptionsAccepted?: string[];
+    assumptionsCorrected?: string[];
+    correctionDetails?: Record<string, unknown>;
   }): Promise<void> {
     const outcome: PilotOutcome = {
       requestId: input.requestId,
@@ -136,6 +161,21 @@ export class KomatikPilotProcessor {
     };
     this.outcomes.set(outcome.requestId, outcome);
     await this.sink?.onOutcome?.(outcome);
+
+    if (this.outcomeWriter) {
+      const verdict = input.accepted ? "accepted" as const : "rejected" as const;
+      try {
+        await this.outcomeWriter.recordVerdict({
+          enrichmentId: input.requestId,
+          verdict,
+          assumptionsAccepted: input.assumptionsAccepted,
+          assumptionsCorrected: input.assumptionsCorrected,
+          correctionDetails: input.correctionDetails,
+        });
+      } catch {
+        // Non-fatal
+      }
+    }
   }
 
   summarizeRoi(): PilotRoiSummary {
