@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.0] - 2026-05-17
+
+### Added — Cold-start learning for `tierRecommendation`
+
+- **`SessionTierBiasLearner`** — in-memory implementation of the new `TierBiasLearner` interface. Tracks per-user, per-tier acceptance and adjusts `metadata.tierRecommendation` based on observed signal. Pure heuristic recommendation stays the default; the learner is opt-in via `SlipstreamConfig.tierBiasLearner`.
+- **`SlipstreamConfig.tierBiasLearner`** — plug a learner instance to enable per-user adjustment.
+- **`Slipstream.recordTierOutcome({ tier, accepted, userId?, domain? })`** — IDE call site: after the user accepts or rejects a turn, feed the outcome back. No-op when no learner is configured.
+- **`TierRecommendation.biasAdjustment`** (new optional field) — present when a learner adjusted the heuristic recommendation. Contains `{ originalTier, appliedReason, observedAcceptance }`. Lets telemetry distinguish "Slipstream picked premium because intent looked complex" from "Slipstream picked premium because user historically accepted premium more often."
+- New exported types: `TierBiasLearner`, `TierBiasContext`, `TierOutcomeInput`, `TierBiasStats`, `SessionTierBiasLearnerOptions`, `TierBiasLearnerInterface`.
+
+### Adjustment policy (conservative by default)
+
+The default `SessionTierBiasLearner` only adjusts when the data warrants:
+
+1. **Cold start** (below 5 outcomes/tier): no adjustment, recommendation = pure heuristic
+2. **Low acceptance** for the recommended tier (<30%) AND another tier with high acceptance (>70%): **flip** to the better tier, confidence reflects the alternative's observed rate
+3. **Mid-range** observed acceptance (30-70%): **soften** confidence by `midRangeConfidencePenalty` (default 0.7), keep the tier
+4. **High** observed acceptance (>70%) for the recommended tier: **boost** confidence by +0.1, keep the tier
+
+Thresholds and the scoring penalty are configurable.
+
+### Scoping
+
+- Default `perUserScoping: true` — stats partition by `enrichmentContext.userId` (the same key the Komatik IDE already passes through `undercurrentEnricher.ts`).
+- `perUserScoping: false` for global stats (rare — useful for shared experimental environments).
+
+### Cross-session persistence (deferred)
+
+The current Komatik `enrichment_outcomes` schema doesn't store `tier`, so cross-session learning isn't fully wired yet. The in-memory `SessionTierBiasLearner` becomes per-user-per-session because the Komatik IDE already caches one Slipstream instance per user. True cross-session requires a `tier` column on `enrichment_outcomes` plus a `KomatikTierBiasLearner` that reads it back at startup — both Komatik-side follow-ups.
+
 ## [2.2.0] - 2026-05-17
 
 ### Added — Graceful degradation when Komatik backend is unavailable

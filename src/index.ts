@@ -205,9 +205,34 @@ export class Slipstream {
   async healthCheck(): Promise<HealthCheckResult> {
     return this.pipeline.healthCheck();
   }
+
+  /**
+   * Feed an accept/reject outcome back to the tier-bias learner so future
+   * `enrich()` calls can incorporate the per-user signal in
+   * `metadata.tierRecommendation`. No-op when no learner is configured.
+   *
+   * The IDE call site: after a user accepts or rejects an assistant turn,
+   * call this with the tier that was actually used.
+   */
+  recordTierOutcome(input: {
+    tier: import("./types.js").CostTier;
+    accepted: boolean;
+    userId?: string;
+    domain?: string;
+  }): void {
+    this.pipeline.recordTierOutcome(input);
+  }
 }
 
 export { Pipeline, recommendTier } from "./engine/pipeline.js";
+export { SessionTierBiasLearner } from "./engine/tier-bias-learner.js";
+export type {
+  TierBiasLearner,
+  TierBiasContext,
+  TierOutcomeInput,
+  TierBiasStats,
+  SessionTierBiasLearnerOptions,
+} from "./engine/tier-bias-learner.js";
 export type { EnrichInput } from "./engine/pipeline.js";
 export { SessionMonitor, estimateTokens } from "./engine/session-monitor.js";
 export { Compactor } from "./engine/compactor.js";
@@ -282,6 +307,7 @@ export type {
   Correction,
   CostTier,
   TierRecommendation,
+  TierBiasLearnerInterface,
   DegradationSummary,
   HealthStatus,
   HealthCheckResult,
