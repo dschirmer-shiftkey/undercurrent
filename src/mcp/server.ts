@@ -146,7 +146,7 @@ function registerTools(
           .optional()
           .describe("Target platform for output formatting (defaults to mcp)"),
         preset: z
-          .enum(["strict-governance", "balanced", "speed-first"])
+          .enum(["strict-governance", "balanced", "speed-first", "safety-first"])
           .optional()
           .describe("Optional governance preset override for this call."),
       },
@@ -382,7 +382,7 @@ function registerTools(
           .optional()
           .describe("Target platform for output formatting (defaults to mcp)"),
         preset: z
-          .enum(["strict-governance", "balanced", "speed-first"])
+          .enum(["strict-governance", "balanced", "speed-first", "safety-first"])
           .optional()
           .describe("Optional governance preset override for this call."),
       },

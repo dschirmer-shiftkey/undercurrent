@@ -541,5 +541,63 @@ describe("Pipeline", () => {
       expect(result.metadata.trace?.events.some((e) => e.stage === "classify")).toBe(true);
       expect(result.metadata.trace?.events.some((e) => e.stage === "finalize")).toBe(true);
     });
+
+    it("enables preflight interception under safety-first preset", async () => {
+      const pipeline = new Pipeline(
+        makeConfig({
+          adapters: [],
+          strategy: createAssumptionStrategy(0.9),
+          preset: "safety-first",
+        }),
+      );
+
+      const result = await pipeline.enrich({
+        message: "continue",
+        preset: "safety-first",
+      });
+
+      expect(result.metadata.preflight).toBeDefined();
+      expect(result.metadata.preflight?.corrections.some((c) => c.type === "continuation")).toBe(true);
+      expect(result.metadata.trace?.events.some((e) => e.stage === "preflight")).toBe(true);
+    });
+
+    it("keeps preflight disabled for balanced preset by default", async () => {
+      const pipeline = new Pipeline(
+        makeConfig({
+          adapters: [],
+          strategy: createAssumptionStrategy(0.9),
+          preset: "balanced",
+        }),
+      );
+
+      const result = await pipeline.enrich({
+        message: "continue",
+        preset: "balanced",
+      });
+
+      expect(result.metadata.preflight).toBeUndefined();
+    });
+
+    it("adds a blocking clarification when preflight detects high cascade risk", async () => {
+      const pipeline = new Pipeline(
+        makeConfig({
+          adapters: [],
+          strategy: createAssumptionStrategy(0.9),
+          preset: "safety-first",
+        }),
+      );
+
+      const result = await pipeline.enrich({
+        message: "merge that",
+        preset: "safety-first",
+      });
+
+      expect(result.metadata.preflight?.blockingClarificationNeeded).toBe(true);
+      expect(
+        result.clarifications.some((c) =>
+          c.reason.toLowerCase().includes("preflight"),
+        ),
+      ).toBe(true);
+    });
   });
 });

@@ -173,6 +173,11 @@ export class DefaultStrategy implements EnrichmentStrategy {
     context: ContextLayer[],
     confidenceThreshold: number,
   ): Promise<GapResolution> {
+    const highPreflightRisk = this.hasHighPreflightRisk(context);
+    const adjustedThreshold = highPreflightRisk
+      ? Math.min(0.95, confidenceThreshold + 0.2)
+      : confidenceThreshold;
+
     for (const layer of context) {
       const match = this.searchContextForGap(gap, layer);
       if (match) {
@@ -186,7 +191,7 @@ export class DefaultStrategy implements EnrichmentStrategy {
 
     const inferredConfidence = context.length > 0 ? 0.5 + context.length * 0.05 : 0.3;
 
-    if (inferredConfidence >= confidenceThreshold || !gap.critical) {
+    if (inferredConfidence >= adjustedThreshold || (!gap.critical && !highPreflightRisk)) {
       return {
         type: "assumed",
         assumption: {
@@ -209,12 +214,14 @@ export class DefaultStrategy implements EnrichmentStrategy {
         id: randomUUID(),
         question: this.gapToQuestion(gap),
         options: [
-          { id: "opt-1", label: "The most recent thing I was working on", isDefault: true },
+          { id: "opt-1", label: "The most recent thing I was working on", isDefault: !highPreflightRisk },
           { id: "opt-2", label: "Something else — I'll specify", isDefault: false },
         ],
         allowMultiple: false,
-        defaultOptionId: "opt-1",
-        reason: gap.description,
+        defaultOptionId: highPreflightRisk ? "opt-2" : "opt-1",
+        reason: highPreflightRisk
+          ? `${gap.description}. Elevated preflight cascade risk requires explicit confirmation.`
+          : gap.description,
       },
     };
   }
@@ -397,6 +404,17 @@ export class DefaultStrategy implements EnrichmentStrategy {
    */
   private isAcknowledgment(lower: string, words: string[]): boolean {
     if (words.length > 8) return false;
+    const trimmed = lower.trim();
+    if (
+      trimmed === "continue" ||
+      trimmed === "next step" ||
+      trimmed === "next" ||
+      trimmed === "please" ||
+      trimmed === "go ahead" ||
+      trimmed === "merge when green"
+    ) {
+      return true;
+    }
 
     const ACK_PHRASES = [
       /\b(thank you|thanks|thank ya|thx|ty|ty!|thanks!)\b/g,
@@ -430,6 +448,14 @@ export class DefaultStrategy implements EnrichmentStrategy {
     );
 
     return substantive.length === 0;
+  }
+
+  private hasHighPreflightRisk(context: ContextLayer[]): boolean {
+    for (const layer of context) {
+      if (layer.source !== "preflight") continue;
+      if (layer.data.cascadeRisk === "high") return true;
+    }
+    return false;
   }
 
   /**

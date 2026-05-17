@@ -147,6 +147,7 @@ export interface EnrichmentMetadata {
   /** Wave-meter-style readout of session token pressure. Present only when sessionMonitor is configured. */
   budget?: BudgetMeter;
   governance?: GovernanceSummary;
+  preflight?: PreflightResult;
   trace?: EnrichmentTrace;
 }
 
@@ -201,7 +202,32 @@ export interface GovernanceSummary {
   interventions: GovernanceIntervention[];
 }
 
+export interface Correction {
+  type: "typo" | "continuation";
+  original: string;
+  corrected: string;
+  basis: string;
+  confidence: number;
+}
+
+export type CascadeRiskLevel = "low" | "medium" | "high";
+
+export interface CascadeRisk {
+  level: CascadeRiskLevel;
+  signals: string[];
+  reasoning: string;
+}
+
+export interface PreflightResult {
+  correctedMessage: string;
+  corrections: Correction[];
+  cascadeRisk: CascadeRisk;
+  contradictions: string[];
+  blockingClarificationNeeded: boolean;
+}
+
 export type TraceStage =
+  | "preflight"
   | "classify"
   | "gather"
   | "govern"
@@ -229,7 +255,18 @@ export interface EnrichmentTrace {
 
 export type TargetPlatform = "cursor" | "claude" | "chatgpt" | "api" | "mcp" | "generic";
 
-export type GovernancePreset = "strict-governance" | "balanced" | "speed-first";
+export type GovernancePreset =
+  | "strict-governance"
+  | "balanced"
+  | "speed-first"
+  | "safety-first";
+
+export interface PreflightPolicy {
+  enabled: boolean;
+  silentCorrectionsEnabled: boolean;
+  blockOnCascadeRisk: "none" | "high";
+  maxCorrectionsPerMessage: number;
+}
 
 export interface MemoryGovernancePolicy {
   preset: GovernancePreset;
@@ -239,6 +276,7 @@ export interface MemoryGovernancePolicy {
   blockLowConfidenceAssumptions: boolean;
   dropStaleContext: boolean;
   maxAssumptionsPerMessage: number;
+  preflight: PreflightPolicy;
 }
 
 export interface ObservabilityConfig {

@@ -27,6 +27,12 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
     blockLowConfidenceAssumptions: true,
     dropStaleContext: true,
     maxAssumptionsPerMessage: 2,
+    preflight: {
+      enabled: false,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "none",
+      maxCorrectionsPerMessage: 5,
+    },
   },
   balanced: {
     preset: "balanced",
@@ -36,6 +42,12 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
     blockLowConfidenceAssumptions: true,
     dropStaleContext: true,
     maxAssumptionsPerMessage: 3,
+    preflight: {
+      enabled: false,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "none",
+      maxCorrectionsPerMessage: 5,
+    },
   },
   "speed-first": {
     preset: "speed-first",
@@ -45,6 +57,27 @@ export const UNDERCURRENT_PRESETS: Record<GovernancePreset, Partial<MemoryGovern
     blockLowConfidenceAssumptions: false,
     dropStaleContext: false,
     maxAssumptionsPerMessage: 5,
+    preflight: {
+      enabled: false,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "none",
+      maxCorrectionsPerMessage: 5,
+    },
+  },
+  "safety-first": {
+    preset: "safety-first",
+    maxContextAgeMs: 24 * 60 * 60 * 1000,
+    criticalAssumptionMinConfidence: 0.84,
+    assumptionMinConfidence: 0.76,
+    blockLowConfidenceAssumptions: true,
+    dropStaleContext: true,
+    maxAssumptionsPerMessage: 2,
+    preflight: {
+      enabled: true,
+      silentCorrectionsEnabled: true,
+      blockOnCascadeRisk: "high",
+      maxCorrectionsPerMessage: 5,
+    },
   },
 };
 
@@ -202,6 +235,8 @@ export type {
   ModelRecommendation,
   ModelRouterConfig,
   PipelineHooks,
+  PreflightPolicy,
+  PreflightResult,
   ProcessResult,
   ResponseSignals,
   Scope,
@@ -226,6 +261,9 @@ export type {
   OutcomeVerdictInput,
   OutcomeWriter,
   OutcomeWriterConfig,
+  CascadeRisk,
+  CascadeRiskLevel,
+  Correction,
   TaskDomain,
   TargetPlatform,
   UndercurrentConfig,
