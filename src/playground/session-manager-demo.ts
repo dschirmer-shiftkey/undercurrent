@@ -49,7 +49,7 @@ function tierFromArgv(): TierBias {
   const idx = process.argv.indexOf("--tier");
   if (idx >= 0 && process.argv[idx + 1]) {
     const v = process.argv[idx + 1]!;
-    if (v === "budget" || v === "balanced" || v === "premier") return v;
+    if (v === "budget" || v === "balanced" || v === "premium") return v;
   }
   return "balanced";
 }

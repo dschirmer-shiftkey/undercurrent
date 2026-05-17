@@ -253,6 +253,86 @@ npm run replay -- path/to/transcript.jsonl --verbose
 
 These outputs are intended to provide an ROI loop before changing pricing/packaging: prove quality-per-token and reliability gains first, then optimize rollout strategy.
 
+## Komatik IDE integration (recommended shape)
+
+For the **Komatik platform IDE** (`platform/web/app/api/workspace-agent/route.ts`), Slipstream does **not** own model selection — the host's `getModelConfigForPhase(phase, tier)` does. Slipstream contributes a **tier recommendation** via `enrich().metadata.tierRecommendation`. The IDE chooses whether to honor it based on the user's `undercurrent_settings.autoTier` flag.
+
+```ts
+// In workspace-agent/route.ts
+import { Slipstream, recommendTier } from "@komatik/slipstream";
+import { KomatikPreferenceClient } from "@komatik/slipstream/komatik";
+
+const settings = await prefClient.getUndercurrentSettings(user.id);
+// → { enabled, enrichmentDepth, strategy, showEnrichmentDetails, autoTier?, defaultTier? }
+
+if (settings.enabled) {
+  const enriched = await slipstream.enrich({
+    message: userMessage,
+    conversation,
+    targetPlatform: "api",
+  });
+
+  // NEW in v2.1+: tier recommendation from the enriched intent
+  const recommended = enriched.metadata.tierRecommendation;
+  // → { tier: 'budget' | 'balanced' | 'premium', confidence, reasoning, signals }
+
+  const effectiveTier =
+    settings.autoTier && recommended && recommended.confidence >= 0.5
+      ? recommended.tier
+      : (userPickedTier ?? settings.defaultTier ?? "balanced");
+
+  const modelConfig = getModelConfigForPhase(phase, effectiveTier);
+  // …call model with enriched.enrichedMessage and modelConfig
+}
+```
+
+### What Slipstream provides for the IDE
+
+| Surface | Purpose |
+|---|---|
+| `enrich().enrichedMessage` | The prompt to send to the model (existing) |
+| `enrich().metadata.tierRecommendation` | **NEW** — `{ tier, confidence, reasoning, signals }` for the host's router |
+| `enrich().metadata.preflight` | Cascade-risk + typo/contradiction signals (existing) |
+| `enrich().metadata.governance` | Stale-context filtering + assumption blocks (existing) |
+| `DriftMonitor` | Per-session entity-drift detection; emits `refreshRecommended` for the IDE to wire into `resetSessionState()` |
+| `KomatikOutcomeWriter` | Persist accept/reject verdicts to `enrichment_outcomes` |
+| `KomatikPreferenceClient` | Read/write `undercurrent_settings` with type-safe schema matching the IDE's UI |
+
+### What Slipstream does NOT do for the IDE
+
+- **Does not call models.** The host owns `getModelConfigForPhase` and model invocation.
+- **Does not own session lifecycle.** The host's `workspace-agent/route.ts` owns context prep, act loop, post-flight, memory.
+- **Does not maintain a parallel model registry.** Komatik's `model_availability` is the source of truth.
+
+### Validating tier-recommendation rollout
+
+The `runTierRecommendationHarness` helper compares user-picked-tier strategies against `slipstream-recommended`, with the host's tier→model mapping held constant:
+
+```ts
+import { runTierRecommendationHarness } from "@komatik/slipstream/komatik";
+
+const comparison = await runTierRecommendationHarness({
+  workload: realProductionMessages,
+  variants: [
+    { name: "user-pick-balanced", strategy: { kind: "user-pick", userPick: "balanced" } },
+    { name: "slipstream-auto", strategy: { kind: "slipstream-recommended" } },
+  ],
+  models: realModelTable,
+  tierToModel: { pick: (tier) => realKomatikRouter.pickFor(tier) },
+});
+
+console.log(comparison.results);     // per-variant acceptance + cost + tier histogram
+console.log(comparison.winners);     // { byAcceptance, byCost }
+```
+
+**Honest framing:** the harness is a methodology. Plug in real production acceptance data and the real `getModelConfigForPhase` for a real conclusion.
+
+### `SlipstreamSessionManager` is deprecated for IDE consumers
+
+The `SlipstreamSessionManager` façade (added in v2.0) was built for an integration shape the live Komatik IDE doesn't need — the IDE already owns session lifecycle, model selection, telemetry, and memory. The façade remains exported for non-IDE consumers (Sundog, Kindling, third-party apps) that want a one-class wrapper. It will be removed in v3 unless a real consumer surfaces.
+
+If you previously used `SlipstreamSessionManager` for Komatik IDE wiring, migrate to direct `Slipstream.enrich()` + `metadata.tierRecommendation` as shown above.
+
 ## Production pilot integration (`process`)
 
 For a real Komatik app path (Forge/Triage/Floe), use `KomatikPilotProcessor` to wrap `Slipstream.process()` and emit ROI telemetry per request:

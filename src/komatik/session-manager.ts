@@ -12,6 +12,7 @@ import { KomatikSessionWriter } from "./session-writer.js";
 import type {
   CompactionResult,
   ConversationTurn,
+  CostTier,
   EnrichedPrompt,
   ModelCallerFn,
   ModelRecommendation,
@@ -24,17 +25,35 @@ import type {
 import type { KomatikDataClient, KomatikWriteClient } from "./client.js";
 
 /**
- * High-level façade for the Komatik Workbench IDE. One class, one config,
- * one method per IDE action. Wraps Slipstream + KomatikPilotProcessor +
- * KomatikOutcomeWriter + DriftMonitor under a single contract so the IDE
- * does not need to know which Slipstream primitive owns what.
+ * @deprecated `SlipstreamSessionManager` was built for an integration shape
+ * that the live Komatik IDE doesn't actually need. The IDE's
+ * `workspace-agent/route.ts` already owns session lifecycle, message
+ * accumulation, model selection (via `getModelConfigForPhase`), telemetry,
+ * and memory. A wrapper façade duplicates and competes with that pipeline.
  *
- * Replaces the IDE's manual "budget / balanced / premier" tier picker:
- * Slipstream's model router picks the actual model per request, with the
- * tier bias acting as a soft preference on scoring weights.
+ * The recommended integration shape for the Komatik IDE is:
+ *
+ *   1. Call `slipstream.enrich({ message, conversation, ... })`
+ *   2. Read `result.metadata.tierRecommendation.tier` if the user has
+ *      `undercurrent_settings.autoTier === true`
+ *   3. Pass the resulting tier into the host's existing model router
+ *   4. Use `KomatikOutcomeWriter` directly to record accept/reject verdicts
+ *
+ * This façade remains exported for non-IDE consumers (Sundog, Kindling,
+ * third-party apps) that *don't* already have a session pipeline and want
+ * a one-class wrapper. Will be removed in v3 unless a real consumer surfaces.
+ *
+ * See the comment block above `TIER_WEIGHT_PRESETS` for why the tier-bias
+ * weighting scheme in this manager doesn't match the real Komatik router.
  */
 
-export type TierBias = "budget" | "balanced" | "premier";
+/**
+ * @deprecated Use `CostTier` from `@komatik/slipstream` instead. The legacy
+ * value `"premier"` was a transcription error for `"premium"` — the actual
+ * Komatik IDE tier names are `budget` / `balanced` / `premium`. This alias
+ * is kept for back-compat with v2.0.x consumers and will be removed in v3.
+ */
+export type TierBias = CostTier;
 
 export type SessionScope = "sandbox" | "project";
 
@@ -152,9 +171,15 @@ export interface SessionManagerConfig {
 }
 
 /**
- * Tier bias → scoring weight presets. The router still picks the actual
- * model per request; tier shifts the weighting toward cost/latency
- * (budget), quality (premier), or balanced default.
+ * @deprecated Tier bias → scoring weight presets. **Does not match how the
+ * real Komatik model router works** — Komatik's router uses cost ceilings +
+ * quality floors per tier (see `Komatik/platform/web/lib/llm/modelRouter.ts`),
+ * not weighted sums of (success, acceptance, latency, affinity). These
+ * presets only affect Slipstream's internal `ModelScorer` when callers wire
+ * it as a standalone router — which is not how the Komatik IDE consumes
+ * Slipstream. For IDE integration, ignore this and use
+ * `metadata.tierRecommendation` from `Slipstream.enrich()` instead. Will be
+ * removed in v3.
  */
 export const TIER_WEIGHT_PRESETS: Record<TierBias, ScoringWeights> = {
   budget: {
@@ -169,7 +194,7 @@ export const TIER_WEIGHT_PRESETS: Record<TierBias, ScoringWeights> = {
     latency: 0.1,
     affinity: 0.25,
   },
-  premier: {
+  premium: {
     successRate: 0.4,
     acceptanceRate: 0.5,
     latency: 0.05,
@@ -189,6 +214,11 @@ interface ActiveSessionState {
   resumedUnresolved: string[];
 }
 
+/**
+ * @deprecated See the file-level note. For Komatik IDE integration, prefer
+ * `slipstream.enrich()` + `metadata.tierRecommendation` directly. Will be
+ * removed in v3.
+ */
 export class SlipstreamSessionManager {
   private readonly config: Required<
     Pick<
@@ -439,7 +469,7 @@ export class SlipstreamSessionManager {
    * at session-start time. End and restart the session to apply.
    */
   async setTierBias(userId: string, tier: TierBias): Promise<void> {
-    await this.preferenceClient.setTierBias(userId, tier);
+    await this.preferenceClient.setDefaultTier(userId, tier);
     this.tierBiasCache.set(userId, tier);
   }
 
@@ -462,7 +492,8 @@ export class SlipstreamSessionManager {
     if (this.tierBiasCache.has(userId)) {
       return this.tierBiasCache.get(userId) ?? null;
     }
-    const stored = await this.preferenceClient.getTierBias(userId);
+    const settings = await this.preferenceClient.getUndercurrentSettings(userId);
+    const stored = settings.defaultTier ?? null;
     this.tierBiasCache.set(userId, stored);
     return stored;
   }

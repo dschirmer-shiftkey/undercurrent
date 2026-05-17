@@ -149,6 +149,38 @@ export interface EnrichmentMetadata {
   governance?: GovernanceSummary;
   preflight?: PreflightResult;
   trace?: EnrichmentTrace;
+  /**
+   * Tier recommendation for the *downstream model router*. Informational —
+   * the host (e.g., Komatik IDE's workspace-agent) decides whether to honor
+   * it. Maps directly to Komatik's `CostTier` so a consumer can drop it into
+   * `getModelConfigForPhase(phase, suggestedTier.tier)` without translation.
+   */
+  tierRecommendation?: TierRecommendation;
+}
+
+// ─── Cost Tier Recommendation ──────────────────────────────────────────────
+// Slipstream does not own model selection — the host's router does. What
+// Slipstream provides is a per-message *recommended tier* based on intent,
+// scope, and emotional load. Names match Komatik's CostTier verbatim so the
+// host can pass it through with no translation.
+
+export type CostTier = "budget" | "balanced" | "premium";
+
+export interface TierRecommendation {
+  /** Suggested cost tier for the host's router. */
+  tier: CostTier;
+  /** 0-1 confidence in this recommendation. Low confidence = host should prefer user pick. */
+  confidence: number;
+  /** Plain-English reasoning so the host can surface "Slipstream chose Premium because…" */
+  reasoning: string;
+  /** Signals that drove the choice — useful for telemetry / debugging. */
+  signals: {
+    action: Action;
+    specificity: Specificity;
+    scope: Scope;
+    emotionalLoad: EmotionalLoad;
+    enrichmentDepth: EnrichmentMetadata["enrichmentDepth"];
+  };
 }
 
 /**

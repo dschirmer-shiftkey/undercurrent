@@ -25,6 +25,7 @@ import type {
   PreflightResult,
   SessionHealth,
   TargetPlatform,
+  TierRecommendation,
   TokenAccounting,
   SlipstreamConfig,
 } from "../types.js";
@@ -300,6 +301,7 @@ export class Pipeline {
         budget: this.computeBudget(tokens),
         governance: governanceSummary,
         preflight,
+        tierRecommendation: recommendTier(intent, depth),
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
           : undefined,
@@ -511,6 +513,7 @@ export class Pipeline {
           interventions: [],
         },
         preflight,
+        tierRecommendation: recommendTier(intent, "none"),
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
           : undefined,
@@ -980,4 +983,88 @@ export class Pipeline {
       console.log("[slipstream]", ...args);
     }
   }
+}
+
+/**
+ * Maps an enriched message's intent + depth signals to a recommended cost
+ * tier for the host's downstream model router. Names ("budget" / "balanced"
+ * / "premium") match Komatik's CostTier so the host can drop the value
+ * directly into `getModelConfigForPhase(phase, suggestedTier)`.
+ *
+ * Pure heuristic, no LLM. Deterministic. The host owns final model selection
+ * — this is a *signal*, not an instruction.
+ *
+ * Heuristic:
+ *   - depth=none / acknowledge / report → budget (cheap path for trivial work)
+ *   - high specificity + atomic-local scope + fix/build action → budget
+ *     (well-specified work; cheap models handle it fine)
+ *   - depth=deep, OR low specificity, OR cross-system+ scope,
+ *     OR design/decide/refactor actions → premium (complex/ambiguous needs the
+ *     best available)
+ *   - everything else → balanced (default)
+ *   - emotionalLoad in {frustrated, uncertain} bumps up one tier (escalate
+ *     when the user is struggling — quality matters more than cost)
+ */
+export function recommendTier(
+  intent: IntentSignal,
+  depth: EnrichmentMetadata["enrichmentDepth"],
+): TierRecommendation {
+  const signals = {
+    action: intent.action,
+    specificity: intent.specificity,
+    scope: intent.scope,
+    emotionalLoad: intent.emotionalLoad,
+    enrichmentDepth: depth,
+  };
+
+  let tier: TierRecommendation["tier"];
+  let reasoning: string;
+  let confidence = intent.confidence;
+
+  if (depth === "none" || intent.action === "acknowledge" || intent.action === "report") {
+    tier = "budget";
+    reasoning =
+      depth === "none"
+        ? "Passthrough enrichment — trivial message, cheapest tier is fine."
+        : `Action=${intent.action} bypasses substantive work; cheap path.`;
+  } else if (
+    intent.specificity === "high" &&
+    (intent.scope === "atomic" || intent.scope === "local") &&
+    (intent.action === "fix" || intent.action === "build")
+  ) {
+    tier = "budget";
+    reasoning = "Well-specified narrow-scope work; budget tier handles it reliably.";
+  } else if (
+    depth === "deep" ||
+    intent.specificity === "low" ||
+    intent.scope === "cross-system" ||
+    intent.scope === "product" ||
+    intent.action === "design" ||
+    intent.action === "decide"
+  ) {
+    tier = "premium";
+    reasoning = `${depth === "deep" ? "Deep enrichment" : intent.specificity === "low" ? "Low-specificity request" : intent.scope === "cross-system" || intent.scope === "product" ? "Broad scope" : `${intent.action} action`} — premium tier for higher acceptance.`;
+  } else {
+    tier = "balanced";
+    reasoning = "Standard scope/specificity — balanced tier (default).";
+  }
+
+  // Frustrated or uncertain users get an upgrade — quality matters more than cost
+  // when the user is struggling.
+  const TIER_ORDER: TierRecommendation["tier"][] = ["budget", "balanced", "premium"];
+  if (intent.emotionalLoad === "frustrated" || intent.emotionalLoad === "uncertain") {
+    const idx = TIER_ORDER.indexOf(tier);
+    if (idx < TIER_ORDER.length - 1) {
+      tier = TIER_ORDER[idx + 1]!;
+      reasoning += ` Escalated one tier (user emotional load=${intent.emotionalLoad}).`;
+    }
+  }
+
+  // Low-confidence intent classification → soften the recommendation.
+  if (intent.confidence < 0.5) {
+    confidence = Math.max(0.3, intent.confidence);
+    reasoning += " (Low intent confidence — host should consider falling back to user pick.)";
+  }
+
+  return { tier, confidence, reasoning, signals };
 }
