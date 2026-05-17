@@ -45,15 +45,34 @@ function stripNoise(text: string): string {
     .replace(/https?:\/\/\S+/g, " ");
 }
 
-const IDENTIFIER_PATTERN = /\b([A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*|[a-z]+(?:[A-Z][a-zA-Z]*)+|[A-Z]{2,}[A-Za-z]*)\b/g;
+function isIdentifierLikeToken(token: string): boolean {
+  if (token.length < 3) return false;
+  let hasLetter = false;
+  let hasUpper = false;
+  let hasLower = false;
+  for (const ch of token) {
+    if (ch >= "A" && ch <= "Z") {
+      hasLetter = true;
+      hasUpper = true;
+    } else if (ch >= "a" && ch <= "z") {
+      hasLetter = true;
+      hasLower = true;
+    } else if ((ch < "0" || ch > "9") && ch !== "_") {
+      return false;
+    }
+  }
+  if (!hasLetter) return false;
+  if (hasUpper && hasLower) return true;
+  return hasUpper && token.length >= 3;
+}
 
 function extractReferencedTerms(response: string, limit = 12): string[] {
   const cleaned = stripNoise(response);
   const seen = new Map<string, number>();
-  const matches = cleaned.matchAll(IDENTIFIER_PATTERN);
-  for (const match of matches) {
-    const term = match[1];
+  const tokens = cleaned.split(/[^A-Za-z0-9_]+/);
+  for (const term of tokens) {
     if (!term || term.length < 3) continue;
+    if (!isIdentifierLikeToken(term)) continue;
     seen.set(term, (seen.get(term) ?? 0) + 1);
   }
   return [...seen.entries()]

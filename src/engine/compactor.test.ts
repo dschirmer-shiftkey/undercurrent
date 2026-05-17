@@ -115,6 +115,24 @@ describe("Compactor", () => {
       expect(result.recentExchanges).toEqual([]);
     });
 
+    it("extracts active work and unresolved items from conversation when state is empty", () => {
+      const compactor = new Compactor();
+      const conversation: ConversationTurn[] = [
+        { role: "user", content: "I am working on hardening the auth middleware for prod." },
+        { role: "assistant", content: "Sounds good." },
+        { role: "user", content: "Still need to validate token refresh handling before release." },
+        { role: "assistant", content: "Will do." },
+      ];
+      const state = makeSessionState({
+        activeWorkItems: [],
+        unresolvedItems: [],
+      });
+
+      const result = compactor.heuristicCompact(conversation, state);
+      expect(result.activeWork.some((x) => x.toLowerCase().includes("hardening"))).toBe(true);
+      expect(result.unresolved.some((x) => x.toLowerCase().includes("token refresh"))).toBe(true);
+    });
+
     it("deduplicates decisions from both state and conversation", () => {
       const compactor = new Compactor();
       const conversation: ConversationTurn[] = [

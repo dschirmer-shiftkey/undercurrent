@@ -163,19 +163,30 @@ function extractDecisions(conversation: ConversationTurn[]): string[] {
 }
 
 function extractActiveWork(conversation: ConversationTurn[]): string[] {
-  const workPatterns = [
-    /(?:working on|building|implementing|creating|adding|fixing)\s+(.{10,120})/i,
-    /(?:task|todo|next step|need to)\s*:?\s+(.{10,120})/i,
+  const workSignals = [
+    "working on",
+    "building",
+    "implementing",
+    "creating",
+    "adding",
+    "fixing",
+    "task",
+    "todo",
+    "next step",
+    "need to",
   ];
 
   const items: string[] = [];
   const recentTurns = conversation.slice(-20);
 
   for (const turn of recentTurns) {
-    for (const pattern of workPatterns) {
-      const match = turn.content.match(pattern);
-      if (match?.[1]) {
-        items.push(match[1].trim().slice(0, 150));
+    const lower = turn.content.toLowerCase();
+    for (const signal of workSignals) {
+      const idx = lower.indexOf(signal);
+      if (idx === -1) continue;
+      const raw = turn.content.slice(idx + signal.length).replace(/^[:\s-]+/, "").trim();
+      if (raw.length >= 10) {
+        items.push(raw.slice(0, 150));
         break;
       }
     }
@@ -185,9 +196,15 @@ function extractActiveWork(conversation: ConversationTurn[]): string[] {
 }
 
 function extractUnresolved(conversation: ConversationTurn[]): string[] {
-  const unresolvedPatterns = [
-    /(?:still need|haven'?t|todo|unresolved|open question|blocker|blocked by)\s+(.{10,120})/i,
-    /(?:\?)\s*$/m,
+  const unresolvedSignals = [
+    "still need",
+    "haven't",
+    "havent",
+    "todo",
+    "unresolved",
+    "open question",
+    "blocker",
+    "blocked by",
   ];
 
   const items: string[] = [];
@@ -195,12 +212,23 @@ function extractUnresolved(conversation: ConversationTurn[]): string[] {
 
   for (const turn of recentTurns) {
     if (turn.role !== "user") continue;
-    for (const pattern of unresolvedPatterns) {
-      const match = turn.content.match(pattern);
-      if (match?.[1]) {
-        items.push(match[1].trim().slice(0, 150));
-        break;
-      }
+    const trimmed = turn.content.trim();
+    const lower = trimmed.toLowerCase();
+
+    let captured = "";
+    for (const signal of unresolvedSignals) {
+      const idx = lower.indexOf(signal);
+      if (idx === -1) continue;
+      captured = trimmed.slice(idx + signal.length).replace(/^[:\s-]+/, "").trim();
+      break;
+    }
+
+    if (!captured && trimmed.endsWith("?")) {
+      captured = trimmed;
+    }
+
+    if (captured.length >= 10) {
+      items.push(captured.slice(0, 150));
     }
   }
 
