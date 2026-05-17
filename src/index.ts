@@ -8,6 +8,7 @@ import type {
   EnrichedPrompt,
   EnrichmentStrategy,
   GovernancePreset,
+  HealthCheckResult,
   MemoryGovernancePolicy,
   PipelineHooks,
   ProcessResult,
@@ -189,6 +190,21 @@ export class Slipstream {
   get sessionId(): string | null {
     return this.pipeline.getSessionId();
   }
+
+  /**
+   * Lightweight pre-flight check for backend health. Calls each adapter's
+   * `available()` and, when a model router is configured, attempts a one-
+   * shot scoring-data load. Aggregates into a single `HealthCheckResult`
+   * the host can use to decide whether to enable Slipstream for this
+   * session.
+   *
+   * Total cost is bounded by the per-adapter timeout (defaults to the
+   * pipeline timeout). Failing checks never throw — they're reported as
+   * `status: "error"` in the per-adapter health entry.
+   */
+  async healthCheck(): Promise<HealthCheckResult> {
+    return this.pipeline.healthCheck();
+  }
 }
 
 export { Pipeline, recommendTier } from "./engine/pipeline.js";
@@ -266,6 +282,10 @@ export type {
   Correction,
   CostTier,
   TierRecommendation,
+  DegradationSummary,
+  HealthStatus,
+  HealthCheckResult,
+  AdapterHealth,
   TaskDomain,
   TargetPlatform,
   SlipstreamConfig,

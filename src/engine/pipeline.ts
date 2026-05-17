@@ -28,6 +28,8 @@ import type {
   TierRecommendation,
   TokenAccounting,
   SlipstreamConfig,
+  HealthCheckResult,
+  AdapterHealth,
 } from "../types.js";
 import { randomUUID } from "node:crypto";
 import { Checkpointer } from "./checkpointer.js";
@@ -55,6 +57,8 @@ export class Pipeline {
   private readonly maxClarifications: number;
   private readonly confidenceThreshold: number;
   private readonly timeoutMs: number;
+  private readonly adapterTimeoutMs: number;
+  private readonly failureMode: "degraded" | "strict";
   private readonly defaultPlatform: TargetPlatform;
   private readonly debug: boolean;
   private readonly onEnrichment?: (result: EnrichedPrompt) => void;
@@ -78,6 +82,8 @@ export class Pipeline {
     this.maxClarifications = config.maxClarifications ?? 2;
     this.confidenceThreshold = config.assumptionConfidenceThreshold ?? 0.6;
     this.timeoutMs = config.timeoutMs ?? 10_000;
+    this.adapterTimeoutMs = config.adapterTimeoutMs ?? this.timeoutMs;
+    this.failureMode = config.failureMode ?? "degraded";
     this.defaultPlatform = config.targetPlatform ?? "generic";
     this.debug = config.debug ?? false;
     this.onEnrichment = config.onEnrichment;
@@ -133,6 +139,88 @@ export class Pipeline {
 
   getSessionId(): string | null {
     return this.monitor?.getSessionId() ?? null;
+  }
+
+  /**
+   * Pre-flight backend health check. Calls each adapter's `available()`
+   * and (when configured) attempts a one-shot scoring-data load on the
+   * model router. Aggregates into a HealthCheckResult.
+   *
+   * Never throws — failures are reported as `error` entries in the per-
+   * adapter health list. Total cost bounded by `adapterTimeoutMs`.
+   */
+  async healthCheck(): Promise<HealthCheckResult> {
+    const start = performance.now();
+    const adapters: AdapterHealth[] = await Promise.all(
+      this.adapters.map(async (adapter) => {
+        const adapterStart = performance.now();
+        try {
+          const ok = await this.withTimeout(
+            adapter.available(),
+            `healthCheck:${adapter.name}`,
+            this.adapterTimeoutMs,
+          );
+          return {
+            name: adapter.name,
+            status: ok ? ("ok" as const) : ("unavailable" as const),
+            latencyMs: Number((performance.now() - adapterStart).toFixed(2)),
+          };
+        } catch (err) {
+          return {
+            name: adapter.name,
+            status: "error" as const,
+            latencyMs: Number((performance.now() - adapterStart).toFixed(2)),
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }),
+    );
+
+    let modelRouter: HealthCheckResult["modelRouter"];
+    if (this.modelUsageAdapter) {
+      const routerStart = performance.now();
+      try {
+        await this.withTimeout(
+          this.modelUsageAdapter.loadScoringData(),
+          "healthCheck:modelRouter",
+          this.adapterTimeoutMs,
+        );
+        modelRouter = {
+          status: "ok",
+          latencyMs: Number((performance.now() - routerStart).toFixed(2)),
+        };
+      } catch (err) {
+        modelRouter = {
+          status: "error",
+          latencyMs: Number((performance.now() - routerStart).toFixed(2)),
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
+    const okCount = adapters.filter((a) => a.status === "ok").length;
+    const errorCount = adapters.filter((a) => a.status === "error").length;
+    const totalAdapters = adapters.length;
+
+    let status: HealthCheckResult["status"];
+    if (totalAdapters === 0) {
+      // No adapters at all — caller misconfiguration, not a backend issue.
+      status = "unavailable";
+    } else if (okCount === 0) {
+      status = "unavailable";
+    } else if (errorCount > 0 || modelRouter?.status === "error") {
+      status = "degraded";
+    } else {
+      status = "healthy";
+    }
+
+    return {
+      status,
+      adapters,
+      modelRouter,
+      checkedAt: Date.now(),
+      totalLatencyMs: Number((performance.now() - start).toFixed(2)),
+    };
   }
 
   async enrich(input: EnrichInput): Promise<EnrichedPrompt> {
@@ -302,6 +390,7 @@ export class Pipeline {
         governance: governanceSummary,
         preflight,
         tierRecommendation: recommendTier(intent, depth),
+        degradation: this.computeDegradation(adapterResults, context.length),
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
           : undefined,
@@ -333,9 +422,25 @@ export class Pipeline {
     }
 
     const enrichedPrompt = await this.enrich(input);
-    const recommendation = await this.routeModel(enrichedPrompt.intent);
+    const { recommendation, degraded } = await this.routeModel(enrichedPrompt.intent);
 
     enrichedPrompt.metadata.modelRecommendation = recommendation;
+    if (degraded) {
+      // Re-compute degradation summary now that we know the router fell back.
+      const existing = enrichedPrompt.metadata.degradation;
+      enrichedPrompt.metadata.degradation = this.computeDegradation(
+        enrichedPrompt.metadata.adapterResults ?? {},
+        enrichedPrompt.context.length,
+        true,
+      );
+      // Preserve any failed-adapter detail from the original summary.
+      if (existing && enrichedPrompt.metadata.degradation) {
+        enrichedPrompt.metadata.degradation.failedAdapterNames =
+          existing.failedAdapterNames.length > 0
+            ? existing.failedAdapterNames
+            : enrichedPrompt.metadata.degradation.failedAdapterNames;
+      }
+    }
     this.modelRouterConfig.onModelSelected?.(recommendation);
 
     const caller: ModelCallerFn = this.modelRouterConfig.caller;
@@ -349,13 +454,40 @@ export class Pipeline {
     return { enrichedPrompt, modelRecommendation: recommendation, modelResponse };
   }
 
-  private async routeModel(intent: IntentSignal): Promise<ModelRecommendation> {
+  /**
+   * Resolves a model recommendation. Defensive against Komatik backend
+   * failure: when `loadScoringData()` throws (network, auth, RLS), returns
+   * a degraded recommendation built from the router's static affinity
+   * defaults instead of propagating the error. The host sees
+   * `degraded: true` so it can surface the state in telemetry without
+   * losing the whole `process()` call.
+   */
+  private async routeModel(
+    intent: IntentSignal,
+  ): Promise<{ recommendation: ModelRecommendation; degraded: boolean }> {
     if (!this.modelRouter || !this.modelUsageAdapter) {
       throw new Error("Slipstream: model routing not configured.");
     }
 
-    const scoringData = await this.modelUsageAdapter.loadScoringData();
-    return this.modelRouter.recommend(intent, scoringData);
+    try {
+      const scoringData = await this.modelUsageAdapter.loadScoringData();
+      return { recommendation: this.modelRouter.recommend(intent, scoringData), degraded: false };
+    } catch (err) {
+      if (this.failureMode === "strict") {
+        throw err;
+      }
+      this.log("model router scoring data load failed; using affinity defaults", err);
+      // Empty scoring data → router falls back to default affinity rules.
+      const emptyScoring = {
+        availableModels: [],
+        usageByModel: new Map(),
+        outcomesByPlatform: new Map(),
+      };
+      return {
+        recommendation: this.modelRouter.recommend(intent, emptyScoring),
+        degraded: true,
+      };
+    }
   }
 
   private recentDecisions(conversation: ConversationTurn[]): string[] {
@@ -514,6 +646,7 @@ export class Pipeline {
         },
         preflight,
         tierRecommendation: recommendTier(intent, "none"),
+        degradation: undefined, // passthrough never touches adapters
         trace: this.includeTrace
           ? { sessionId: this.monitor?.getSessionId(), events: [...this.traceEvents] }
           : undefined,
@@ -854,6 +987,7 @@ export class Pipeline {
           const layers = await this.withTimeout(
             adapter.gather(adapterInput),
             `adapter:${adapter.name}`,
+            this.adapterTimeoutMs,
           );
           timings[adapter.name] = performance.now() - adapterStart;
           adapterResults[adapter.name] = {
@@ -864,21 +998,76 @@ export class Pipeline {
         } catch (err) {
           timings[adapter.name] = performance.now() - adapterStart;
           this.log(`adapter ${adapter.name} failed`, err);
+          const errMessage = err instanceof Error ? err.message : String(err);
           adapterResults[adapter.name] = {
             status: "error",
             layerCount: 0,
-            error: err instanceof Error ? err.message : String(err),
+            error: errMessage,
           };
+          // In degraded mode (default), swallow and return empty layers so the
+          // pipeline keeps going. In strict mode, re-throw — the outer walk
+          // below detects the rejection and propagates.
+          if (this.failureMode === "strict") {
+            throw err;
+          }
           return [] as ContextLayer[];
         }
       }),
     );
+
+    // Strict-mode propagation: throw the first rejection found. allSettled
+    // captures the throw inside the callback, so we must re-throw here.
+    if (this.failureMode === "strict") {
+      const firstRejection = results.find((r) => r.status === "rejected");
+      if (firstRejection && firstRejection.status === "rejected") {
+        throw firstRejection.reason;
+      }
+    }
 
     const layers = results
       .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
       .sort((a, b) => a.priority - b.priority);
 
     return { layers, adapterResults };
+  }
+
+  /**
+   * Computes a degradation summary from adapter results. Returns undefined
+   * when everything succeeded — the metadata field stays absent in the
+   * common case so consumers only have to check when something is wrong.
+   */
+  private computeDegradation(
+    adapterResults: Record<string, AdapterResult>,
+    layerCount: number,
+    modelRouterDegraded?: boolean,
+  ): EnrichmentMetadata["degradation"] {
+    const entries = Object.entries(adapterResults);
+    const failed = entries.filter(([, r]) => r.status === "error");
+    const timedOut = failed.filter(([, r]) =>
+      (r.error ?? "").toLowerCase().includes("timeout"),
+    );
+
+    const failedCount = failed.length;
+    const timedOutCount = timedOut.length;
+    // `noContextHarvested` is descriptive within the summary (callers want
+    // to see it) but it's NOT a degradation trigger on its own — an empty
+    // conversation with only ConversationAdapter configured legitimately
+    // yields zero layers, and that's normal cold-start, not degradation.
+    const noContext = layerCount === 0 && entries.length > 0;
+    const anySignal = failedCount > 0 || modelRouterDegraded === true;
+
+    if (!anySignal) return undefined;
+
+    const summary: NonNullable<EnrichmentMetadata["degradation"]> = {
+      failedAdapters: failedCount,
+      timedOutAdapters: timedOutCount,
+      noContextHarvested: noContext,
+      failedAdapterNames: failed.map(([name]) => name).sort(),
+    };
+    if (modelRouterDegraded !== undefined) {
+      summary.modelRouterDegraded = modelRouterDegraded;
+    }
+    return summary;
   }
 
   private async resolveGaps(
@@ -966,13 +1155,14 @@ export class Pipeline {
       );
   }
 
-  private async withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  private async withTimeout<T>(promise: Promise<T>, label: string, ms?: number): Promise<T> {
+    const limit = ms ?? this.timeoutMs;
     return Promise.race([
       promise,
       new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error(`Slipstream timeout: ${label} exceeded ${this.timeoutMs}ms`)),
-          this.timeoutMs,
+          () => reject(new Error(`Slipstream timeout: ${label} exceeded ${limit}ms`)),
+          limit,
         ),
       ),
     ]);

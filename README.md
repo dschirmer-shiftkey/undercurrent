@@ -304,6 +304,27 @@ if (settings.enabled) {
 - **Does not own session lifecycle.** The host's `workspace-agent/route.ts` owns context prep, act loop, post-flight, memory.
 - **Does not maintain a parallel model registry.** Komatik's `model_availability` is the source of truth.
 
+### Graceful degradation when Komatik is down
+
+`Slipstream.enrich()` defaults to `failureMode: "degraded"` — adapter failures (Supabase down, auth expired, RLS denial, network timeout) are recorded in `metadata.degradation` but never throw. Partial backend failure produces partial enrichment instead of total failure.
+
+```ts
+const result = await slipstream.enrich({ message, conversation });
+if (result.metadata.degradation) {
+  // Surface to telemetry; the IDE chat can still proceed with the (partial) enriched message.
+  log.warn("slipstream degraded", result.metadata.degradation);
+}
+```
+
+For a pre-flight check (e.g., the IDE wants to show a "Slipstream offline" badge before opening a chat):
+
+```ts
+const health = await slipstream.healthCheck();
+// → { status: 'healthy' | 'degraded' | 'unavailable', adapters: [...], modelRouter?: {...} }
+```
+
+Per-adapter timeout via `adapterTimeoutMs` prevents one slow remote-backed adapter from eating the whole pipeline budget. `failureMode: "strict"` is available for callers that need errors to propagate.
+
 ### Validating tier-recommendation rollout
 
 The `runTierRecommendationHarness` helper compares user-picked-tier strategies against `slipstream-recommended`, with the host's tier→model mapping held constant:
