@@ -139,12 +139,14 @@ export class ConversationAdapter implements ContextAdapter {
 
   private extractTerminology(turns: AdapterInput["conversation"]): Map<string, number> {
     const termCounts = new Map<string, number>();
-    const codeTermPattern = /`([^`]+)`|(?:the\s+)?(\w+(?:[-_]\w+)+)/g;
 
     for (const turn of turns) {
-      let match: RegExpExecArray | null;
-      while ((match = codeTermPattern.exec(turn.content)) !== null) {
-        const term = (match[1] ?? match[2])!;
+      for (const term of this.extractBacktickTerms(turn.content)) {
+        if (term.length > 2 && term.length < 60) {
+          termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
+        }
+      }
+      for (const term of this.extractJoinedIdentifierTerms(turn.content)) {
         if (term.length > 2 && term.length < 60) {
           termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
         }
@@ -170,7 +172,6 @@ export class ConversationAdapter implements ContextAdapter {
   private detectRepeatedReads(
     turns: AdapterInput["conversation"],
   ): Array<{ target: string; count: number; kind: "file" | "grep" }> {
-    const filePathPattern = /(?:`|"|')?((?:[a-zA-Z]:[\\/]|\.{1,2}[\\/]|[\w-]+\/)[\w./\\-]+\.[a-zA-Z]{1,6})(?:`|"|')?/g;
     const grepPattern = /(?:grep|search(?:ed)?|rg|ripgrep)\s+(?:for\s+)?["'`]([^"'`]{3,80})["'`]/gi;
 
     const counts = new Map<string, { count: number; kind: "file" | "grep" }>();
@@ -178,17 +179,15 @@ export class ConversationAdapter implements ContextAdapter {
     for (const turn of turns) {
       if (turn.role !== "assistant") continue;
 
-      let match: RegExpExecArray | null;
-      filePathPattern.lastIndex = 0;
       const seenInTurn = new Set<string>();
-      while ((match = filePathPattern.exec(turn.content)) !== null) {
-        const path = match[1]!;
+      for (const path of this.extractLikelyFilePaths(turn.content)) {
         if (seenInTurn.has(path)) continue;
         seenInTurn.add(path);
         const prev = counts.get(path);
         counts.set(path, { count: (prev?.count ?? 0) + 1, kind: "file" });
       }
 
+      let match: RegExpExecArray | null;
       grepPattern.lastIndex = 0;
       const seenGrep = new Set<string>();
       while ((match = grepPattern.exec(turn.content)) !== null) {
@@ -219,31 +218,46 @@ export class ConversationAdapter implements ContextAdapter {
   private detectAbandonment(
     turns: AdapterInput["conversation"],
   ): Array<{ signal: string; turnIndex: number; supersededTurns: number[] }> {
-    const pivotPatterns = [
-      /scratch\s+that/i,
-      /forget\s+(?:that|it|what\s+i\s+said)/i,
-      /never\s*mind/i,
-      /let'?s?\s+(?:try|do|go\s+with)\s+(?:a\s+)?(?:different|another|new)/i,
-      /(?:^|\b)instead\s*,?\s+(?:let'?s?|i\s+want|we\s+should|do)/i,
-      /actually,?\s+(?:let'?s?|i\s+want|we\s+should|forget|no)/i,
-      /(?:back\s+up|backup|undo|revert|roll\s+back)/i,
-      /(?:wrong|that'?s?\s+not\s+(?:right|what|it)|not\s+what\s+i\s+(?:meant|wanted))/i,
-      /different\s+approach/i,
-      /change\s+of\s+plan/i,
+    const pivotPhrases = [
+      "scratch that",
+      "forget that",
+      "forget it",
+      "forget what i said",
+      "never mind",
+      "let's try a different",
+      "lets try a different",
+      "let's do a different",
+      "lets do a different",
+      "let's go with a different",
+      "lets go with a different",
+      "instead, let's",
+      "instead lets",
+      "actually, let's",
+      "actually lets",
+      "back up",
+      "backup",
+      "undo",
+      "revert",
+      "roll back",
+      "different approach",
+      "change of plan",
+      "not what i meant",
+      "not what i wanted",
     ];
 
     const found: Array<{ signal: string; turnIndex: number; supersededTurns: number[] }> = [];
 
     turns.forEach((turn, idx) => {
       if (turn.role !== "user") return;
-      for (const pattern of pivotPatterns) {
-        const match = turn.content.match(pattern);
-        if (!match) continue;
+      const lower = turn.content.toLowerCase();
+      for (const phrase of pivotPhrases) {
+        const at = lower.indexOf(phrase);
+        if (at === -1) continue;
         const supersededTurns: number[] = [];
         for (let back = idx - 1; back >= Math.max(0, idx - 4); back--) {
           supersededTurns.push(back);
         }
-        const signal = this.extractSentenceAround(turn.content, match.index ?? 0).slice(0, 120);
+        const signal = this.extractSentenceAround(turn.content, at).slice(0, 120);
         found.push({ signal, turnIndex: idx, supersededTurns });
         break;
       }
@@ -258,5 +272,96 @@ export class ConversationAdapter implements ContextAdapter {
     const start = before === -1 ? 0 : before + 1;
     const end = after === -1 ? text.length : after + 1;
     return text.slice(start, end).trim();
+  }
+
+  private extractBacktickTerms(text: string): string[] {
+    const terms: string[] = [];
+    let idx = 0;
+    while (idx < text.length) {
+      const start = text.indexOf("`", idx);
+      if (start === -1) break;
+      const end = text.indexOf("`", start + 1);
+      if (end === -1) break;
+      const term = text.slice(start + 1, end).trim();
+      if (term.length > 0) terms.push(term);
+      idx = end + 1;
+    }
+    return terms;
+  }
+
+  private extractJoinedIdentifierTerms(text: string): string[] {
+    const tokens = text
+      .replace(/[<>{}()[\],.!?;:"']/g, " ")
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+    const terms: string[] = [];
+    for (const token of tokens) {
+      const normalized = this.trimToAlnumEdges(token);
+      if (!normalized.includes("-") && !normalized.includes("_")) continue;
+      const parts = normalized.split(/[-_]/).filter((p) => p.length > 0);
+      if (parts.length < 2) continue;
+      if (!parts.every((p) => this.isAlphaNum(p))) continue;
+      terms.push(normalized);
+    }
+    return terms;
+  }
+
+  private extractLikelyFilePaths(text: string): string[] {
+    const tokens = text.split(/\s+/).map((t) => t.trim());
+    const paths: string[] = [];
+    for (const token of tokens) {
+      const candidate = this.trimWrappedToken(token);
+      if (!candidate) continue;
+      if (this.isLikelyFilePath(candidate)) {
+        paths.push(candidate);
+      }
+    }
+    return paths;
+  }
+
+  private isLikelyFilePath(candidate: string): boolean {
+    if (candidate.length < 4 || candidate.length > 260) return false;
+    const hasSeparator = candidate.includes("/") || candidate.includes("\\");
+    if (!hasSeparator) return false;
+    const normalized = candidate.replace(/\\/g, "/");
+    const lastSlash = normalized.lastIndexOf("/");
+    const base = lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+    const dot = base.lastIndexOf(".");
+    if (dot <= 0 || dot === base.length - 1) return false;
+    const ext = base.slice(dot + 1);
+    if (ext.length < 1 || ext.length > 6) return false;
+    return this.isAlphaNum(ext);
+  }
+
+  private trimToAlnumEdges(value: string): string {
+    let start = 0;
+    let end = value.length;
+    while (start < end && !this.isAlphaNumChar(value.charAt(start))) start++;
+    while (end > start && !this.isAlphaNumChar(value.charAt(end - 1))) end--;
+    return value.slice(start, end);
+  }
+
+  private trimWrappedToken(value: string): string {
+    const leading = new Set(["`", "\"", "'", "(", "[", "<", "{"]);
+    const trailing = new Set(["`", "\"", "'", ")", "]", ">", "}", ".", ",", ";", ":", "!", "?"]);
+    let start = 0;
+    let end = value.length;
+    while (start < end && leading.has(value.charAt(start))) start++;
+    while (end > start && trailing.has(value.charAt(end - 1))) end--;
+    return value.slice(start, end);
+  }
+
+  private isAlphaNum(value: string): boolean {
+    if (value.length === 0) return false;
+    for (let i = 0; i < value.length; i++) {
+      if (!this.isAlphaNumChar(value.charAt(i))) return false;
+    }
+    return true;
+  }
+
+  private isAlphaNumChar(ch: string): boolean {
+    if (ch.length === 0) return false;
+    return (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9");
   }
 }

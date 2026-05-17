@@ -7,7 +7,7 @@ import { FilesystemAdapter } from "../adapters/filesystem.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import { parseTranscript, discoverTranscripts } from "./transcript-parser.js";
 import { formatCompactHeader, formatCompactRow, formatResult } from "./formatter.js";
-import type { EnrichedPrompt, TargetPlatform } from "../types.js";
+import type { EnrichedPrompt, GovernancePreset, TargetPlatform } from "../types.js";
 
 interface ReplayResult {
   index: number;
@@ -29,12 +29,26 @@ interface AggregateStats {
   totalGaps: number;
   totalAssumptions: number;
   totalClarifications: number;
+  totalOriginalTokens: number;
+  totalEnrichedTokens: number;
+  totalContextTokens: number;
+  avgTokenOverhead: number;
+  avgTokenMultiplier: number;
+  governanceInterventions: number;
+  governanceBlockedAssumptions: number;
+  governanceFilteredContextLayers: number;
+  assumptionsBeforeGovernance: number;
+  assumptionsAfterGovernance: number;
+  avgTraceEvents: number;
+  preflightCorrectionsTotal: number;
+  blockingClarificationsTotal: number;
+  cascadeRiskDistribution: Record<string, number>;
   domainHintCounts: Record<string, number>;
   actionCounts: Record<string, number>;
   gapDescriptions: Record<string, number>;
 }
 
-function createPipeline(platform: TargetPlatform): Undercurrent {
+function createPipeline(platform: TargetPlatform, preset?: GovernancePreset): Undercurrent {
   return new Undercurrent({
     adapters: [
       new ConversationAdapter(),
@@ -43,6 +57,7 @@ function createPipeline(platform: TargetPlatform): Undercurrent {
     ],
     strategy: new DefaultStrategy(),
     targetPlatform: platform,
+    preset,
   });
 }
 
@@ -50,6 +65,7 @@ async function replayTranscript(
   filePath: string,
   uc: Undercurrent,
   platform: TargetPlatform,
+  preset?: GovernancePreset,
 ): Promise<TranscriptReport> {
   const entries = await parseTranscript(filePath);
   const results: ReplayResult[] = [];
@@ -59,6 +75,7 @@ async function replayTranscript(
       message: entry.rawMessage,
       conversation: entry.conversationSoFar,
       targetPlatform: platform,
+      preset,
     });
 
     results.push({
@@ -84,6 +101,20 @@ function computeStats(reports: TranscriptReport[]): AggregateStats {
     totalGaps: 0,
     totalAssumptions: 0,
     totalClarifications: 0,
+    totalOriginalTokens: 0,
+    totalEnrichedTokens: 0,
+    totalContextTokens: 0,
+    avgTokenOverhead: 0,
+    avgTokenMultiplier: 1,
+    governanceInterventions: 0,
+    governanceBlockedAssumptions: 0,
+    governanceFilteredContextLayers: 0,
+    assumptionsBeforeGovernance: 0,
+    assumptionsAfterGovernance: 0,
+    avgTraceEvents: 0,
+    preflightCorrectionsTotal: 0,
+    blockingClarificationsTotal: 0,
+    cascadeRiskDistribution: {},
     domainHintCounts: {},
     actionCounts: {},
     gapDescriptions: {},
@@ -105,6 +136,37 @@ function computeStats(reports: TranscriptReport[]): AggregateStats {
       stats.totalGaps += result.gaps.length;
       stats.totalAssumptions += result.assumptions.length;
       stats.totalClarifications += result.clarifications.length;
+      stats.avgTraceEvents += result.metadata.trace?.events.length ?? 0;
+
+      if (result.metadata.tokens) {
+        stats.totalOriginalTokens += result.metadata.tokens.originalMessage;
+        stats.totalEnrichedTokens += result.metadata.tokens.enrichedMessage;
+        stats.totalContextTokens += result.metadata.tokens.context;
+      }
+
+      if (result.metadata.governance) {
+        const gov = result.metadata.governance;
+        stats.governanceInterventions += gov.interventions.length;
+        stats.assumptionsBeforeGovernance += gov.assumptionsBefore;
+        stats.assumptionsAfterGovernance += gov.assumptionsAfter;
+        for (const intervention of gov.interventions) {
+          if (intervention.type === "assumption-blocked") {
+            stats.governanceBlockedAssumptions++;
+          }
+          if (intervention.type === "context-filtered") {
+            stats.governanceFilteredContextLayers++;
+          }
+        }
+      }
+      if (result.metadata.preflight) {
+        const preflight = result.metadata.preflight;
+        stats.preflightCorrectionsTotal += preflight.corrections.length;
+        const risk = preflight.cascadeRisk.level;
+        stats.cascadeRiskDistribution[risk] = (stats.cascadeRiskDistribution[risk] ?? 0) + 1;
+        if (preflight.blockingClarificationNeeded) {
+          stats.blockingClarificationsTotal++;
+        }
+      }
 
       const action = result.intent.action;
       stats.actionCounts[action] = (stats.actionCounts[action] ?? 0) + 1;
@@ -122,6 +184,15 @@ function computeStats(reports: TranscriptReport[]): AggregateStats {
 
   stats.avgContextLayers = stats.totalMessages > 0 ? totalCtx / stats.totalMessages : 0;
   stats.avgProcessingMs = stats.totalMessages > 0 ? totalMs / stats.totalMessages : 0;
+  stats.avgTokenOverhead =
+    stats.totalMessages > 0
+      ? (stats.totalEnrichedTokens - stats.totalOriginalTokens) / stats.totalMessages
+      : 0;
+  stats.avgTokenMultiplier =
+    stats.totalOriginalTokens > 0
+      ? stats.totalEnrichedTokens / stats.totalOriginalTokens
+      : 1;
+  stats.avgTraceEvents = stats.totalMessages > 0 ? stats.avgTraceEvents / stats.totalMessages : 0;
 
   return stats;
 }
@@ -165,6 +236,36 @@ function printReport(reports: TranscriptReport[], stats: AggregateStats, verbose
   console.log(`  Total messages: ${BOLD}${stats.totalMessages}${RESET}`);
   console.log(`  Avg processing: ${BOLD}${stats.avgProcessingMs.toFixed(1)}ms${RESET}`);
   console.log(`  Avg context layers: ${BOLD}${stats.avgContextLayers.toFixed(1)}${RESET}`);
+  console.log(
+    `  Avg token overhead: ${BOLD}${stats.avgTokenOverhead.toFixed(1)}${RESET} tokens/message`,
+  );
+  console.log(`  Token multiplier: ${BOLD}${stats.avgTokenMultiplier.toFixed(2)}x${RESET}`);
+  console.log(`  Avg trace events: ${BOLD}${stats.avgTraceEvents.toFixed(1)}${RESET}`);
+  console.log(`  Preflight corrections: ${BOLD}${stats.preflightCorrectionsTotal}${RESET}`);
+  console.log(`  Blocking clarifications: ${BOLD}${stats.blockingClarificationsTotal}${RESET}`);
+  console.log("");
+
+  if (Object.keys(stats.cascadeRiskDistribution).length > 0) {
+    console.log(`  ${BOLD}Cascade risk distribution:${RESET}`);
+    for (const level of ["low", "medium", "high"]) {
+      const count = stats.cascadeRiskDistribution[level] ?? 0;
+      console.log(`    ${level.padEnd(10)} ${String(count).padStart(3)}`);
+    }
+    console.log("");
+  }
+
+  console.log(`  ${BOLD}Governance baseline comparison:${RESET}`);
+  const reduced = stats.assumptionsBeforeGovernance - stats.assumptionsAfterGovernance;
+  const reductionPct =
+    stats.assumptionsBeforeGovernance > 0
+      ? ((reduced / stats.assumptionsBeforeGovernance) * 100).toFixed(0)
+      : "0";
+  console.log(
+    `    assumptions: ${stats.assumptionsBeforeGovernance} -> ${stats.assumptionsAfterGovernance} (${reductionPct}% stricter)`,
+  );
+  console.log(`    interventions: ${stats.governanceInterventions}`);
+  console.log(`    blocked assumptions: ${stats.governanceBlockedAssumptions}`);
+  console.log(`    filtered stale context layers: ${stats.governanceFilteredContextLayers}`);
   console.log("");
 
   // Depth distribution
@@ -245,6 +346,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   let platform: TargetPlatform = "generic";
+  let preset: GovernancePreset | undefined;
   let outputPath: string | null = null;
   let verbose = false;
   const filePaths: string[] = [];
@@ -253,6 +355,8 @@ async function main(): Promise<void> {
     const arg = args[idx]!;
     if (arg === "--platform" && args[idx + 1]) {
       platform = args[++idx]! as TargetPlatform;
+    } else if (arg === "--preset" && args[idx + 1]) {
+      preset = args[++idx]! as GovernancePreset;
     } else if (arg === "--output" && args[idx + 1]) {
       outputPath = args[++idx]!;
     } else if (arg === "--verbose" || arg === "-v") {
@@ -278,20 +382,20 @@ async function main(): Promise<void> {
     } catch {
       console.error("No transcript files found. Pass a path: npm run replay -- <path.jsonl>");
       console.error(
-        "Usage: npm run replay -- [--platform generic] [--verbose] [--output report.json] <file.jsonl ...>",
+        "Usage: npm run replay -- [--platform generic] [--preset balanced] [--verbose] [--output report.json] <file.jsonl ...>",
       );
       process.exit(1);
     }
   }
 
-  const uc = createPipeline(platform);
+  const uc = createPipeline(platform, preset);
   const reports: TranscriptReport[] = [];
 
   for (const fp of filePaths) {
     const absPath = resolve(fp);
     console.log(`Replaying: ${absPath}`);
     try {
-      const report = await replayTranscript(absPath, uc, platform);
+      const report = await replayTranscript(absPath, uc, platform, preset);
       reports.push(report);
       console.log(`  → ${report.messageCount} messages processed`);
     } catch (err) {

@@ -3,6 +3,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createPostgRESTClient } from "./postgrest-client.js";
 import { createUndercurrentMcpServer } from "./server.js";
+import type { GovernancePreset } from "../types.js";
 
 const REQUIRED_ENV = ["KOMATIK_SUPABASE_URL", "KOMATIK_SUPABASE_KEY", "KOMATIK_USER_ID"] as const;
 
@@ -28,6 +29,7 @@ function validateEnv(): { url: string; key: string; userId: string } {
 
 async function main(): Promise<void> {
   const env = validateEnv();
+  const envPreset = process.env.UNDERCURRENT_PRESET as GovernancePreset | undefined;
 
   const client = createPostgRESTClient({
     url: env.url,
@@ -37,6 +39,7 @@ async function main(): Promise<void> {
   const server = createUndercurrentMcpServer({
     client,
     userId: env.userId,
+    preset: envPreset,
   });
 
   const transport = new StdioServerTransport();

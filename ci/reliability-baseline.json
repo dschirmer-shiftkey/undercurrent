@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-05-16T23:03:41.103Z",
+  "dataset": [
+    "fixtures/replay/reliability-ci.jsonl"
+  ],
+  "platform": "generic",
+  "baseline": {
+    "totalMessages": 4,
+    "depthDistribution": {
+      "none": 1,
+      "deep": 2,
+      "standard": 1
+    },
+    "tokenMultiplier": 14.166666666666666,
+    "interventionsPerMessage": 0,
+    "blockedAssumptionRate": 0
+  },
+  "thresholds": {
+    "maxTokenMultiplier": 14.917,
+    "maxDepthDriftL1": 0.55,
+    "minInterventionsPerMessage": 0,
+    "maxInterventionsPerMessage": 0.8,
+    "maxBlockedAssumptionRate": 0.45
+  }
+}
