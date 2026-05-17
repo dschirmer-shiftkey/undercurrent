@@ -88,7 +88,7 @@ function detectTypos(
     return { correctedMessage: message, corrections: [] };
   }
 
-  const originalTokens = message.split(/\s+/);
+  const originalTokens = splitOnWhitespace(message);
   const correctedTokens = [...originalTokens];
   const corrections: PreflightResult["corrections"] = [];
 
@@ -140,7 +140,7 @@ function detectContinuation(
 
 function scoreCascadeRisk(message: string): PreflightResult["cascadeRisk"] {
   const lower = message.toLowerCase();
-  const words = lower.split(/\s+/).filter((w) => w.length > 0);
+  const words = splitOnWhitespace(lower);
   const signals: string[] = [];
   let score = 0;
 
@@ -194,7 +194,7 @@ function detectContradictions(message: string, recentDecisions: string[]): strin
 function buildVocabulary(conversation: ConversationTurn[]): Set<string> {
   const counts = new Map<string, number>();
   for (const turn of conversation) {
-    for (const token of turn.content.split(/\s+/)) {
+    for (const token of splitOnWhitespace(turn.content)) {
       const word = cleanWord(token);
       if (word.length < 4) continue;
       if (!isAlphaWord(word)) continue;
@@ -294,23 +294,29 @@ function extractContentWords(text: string): Set<string> {
     "it",
     "please",
   ]);
-  const words = text
-    .split(/\s+/)
+  const words = splitOnWhitespace(text)
     .map((token) => cleanWord(token))
     .filter((word) => word.length >= 3 && !stopWords.has(word));
   return new Set(words);
 }
 
 function replaceWordCore(token: string, replacement: string): string {
-  const leadingMatch = token.match(/^[^A-Za-z0-9]*/);
-  const trailingMatch = token.match(/[^A-Za-z0-9]*$/);
-  const leading = leadingMatch ? leadingMatch[0] : "";
-  const trailing = trailingMatch ? trailingMatch[0] : "";
+  let start = 0;
+  let end = token.length;
+  while (start < end && !isAlphaNumeric(token.charAt(start))) start++;
+  while (end > start && !isAlphaNumeric(token.charAt(end - 1))) end--;
+  const leading = token.slice(0, start);
+  const trailing = token.slice(end);
   return `${leading}${replacement}${trailing}`;
 }
 
 function cleanWord(token: string): string {
-  return token.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
+  const lower = token.toLowerCase();
+  let start = 0;
+  let end = lower.length;
+  while (start < end && !isLowerAlphaNumeric(lower.charAt(start))) start++;
+  while (end > start && !isLowerAlphaNumeric(lower.charAt(end - 1))) end--;
+  return lower.slice(start, end);
 }
 
 function isAlphaWord(token: string): boolean {
@@ -323,10 +329,47 @@ function isAlphaWord(token: string): boolean {
 }
 
 function normalizeWhitespace(value: string): string {
-  return value.trim().replace(/\s+/g, " ");
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return "";
+  let out = "";
+  let prevSpace = false;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed.charAt(i);
+    const isSpace = isWhitespace(ch);
+    if (isSpace) {
+      if (!prevSpace) out += " ";
+      prevSpace = true;
+    } else {
+      out += ch;
+      prevSpace = false;
+    }
+  }
+  return out;
 }
 
 function truncate(value: string, max: number): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max - 3)}...`;
+}
+
+function splitOnWhitespace(value: string): string[] {
+  const normalized = normalizeWhitespace(value);
+  if (normalized.length === 0) return [];
+  return normalized.split(" ");
+}
+
+function isWhitespace(ch: string): boolean {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+}
+
+function isAlphaNumeric(ch: string): boolean {
+  return (
+    (ch >= "A" && ch <= "Z") ||
+    (ch >= "a" && ch <= "z") ||
+    (ch >= "0" && ch <= "9")
+  );
+}
+
+function isLowerAlphaNumeric(ch: string): boolean {
+  return (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9");
 }
