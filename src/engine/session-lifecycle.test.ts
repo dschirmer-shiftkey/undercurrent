@@ -5,7 +5,7 @@ import type {
   SessionMemoryInput,
   SessionSnapshot,
   SessionWriter,
-  UndercurrentConfig,
+  SlipstreamConfig,
 } from "../types.js";
 
 function createInMemoryWriter(): SessionWriter & {
@@ -39,8 +39,8 @@ function createInMemoryWriter(): SessionWriter & {
 
 function makeConfig(
   writer: SessionWriter,
-  overrides: Partial<UndercurrentConfig> = {},
-): UndercurrentConfig {
+  overrides: Partial<SlipstreamConfig> = {},
+): SlipstreamConfig {
   return {
     adapters: [],
     strategy: new DefaultStrategy(),

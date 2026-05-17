@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Undercurrent } from "../index.js";
+import { Slipstream } from "../index.js";
 import { estimateTokens } from "../engine/session-monitor.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import { KomatikIdentityAdapter } from "../komatik/identity-adapter.js";
@@ -11,21 +11,36 @@ import { KomatikMarketplaceAdapter } from "../komatik/marketplace-adapter.js";
 import { KomatikPreferenceAdapter } from "../komatik/preference-adapter.js";
 import { KomatikOutcomeAdapter } from "../komatik/outcome-adapter.js";
 import { KomatikMemoryAdapter } from "../komatik/memory-adapter.js";
+import { KomatikPilotProcessor } from "../komatik/pilot.js";
 import type { KomatikDataClient, KomatikWriteClient } from "../komatik/client.js";
-import type { ContextLayer, ConversationTurn, TargetPlatform } from "../types.js";
+import type {
+  ContextLayer,
+  ConversationTurn,
+  GovernancePreset,
+  MemoryGovernancePolicy,
+  ModelCallerFn,
+  ModelProvider,
+  TargetPlatform,
+} from "../types.js";
 
 export interface McpServerConfig {
   client: KomatikDataClient;
   userId: string;
   writeClient?: KomatikWriteClient;
+  preset?: GovernancePreset;
+  governance?: Partial<MemoryGovernancePolicy>;
+  pilot?: {
+    caller: ModelCallerFn;
+    defaultProvider?: ModelProvider;
+  };
 }
 
 /**
- * Creates an MCP server that exposes Undercurrent's enrichment pipeline
+ * Creates an MCP server that exposes Slipstream's enrichment pipeline
  * and Komatik user context to external tools via the MCP protocol.
  */
-export function createUndercurrentMcpServer(config: McpServerConfig): McpServer {
-  const { client, userId, writeClient } = config;
+export function createSlipstreamMcpServer(config: McpServerConfig): McpServer {
+  const { client, userId, writeClient, preset, governance, pilot } = config;
 
   const adapterOptions = { client, userId };
 
@@ -37,7 +52,7 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
   const projectAdapter = new KomatikProjectAdapter(adapterOptions);
   const marketplaceAdapter = new KomatikMarketplaceAdapter(adapterOptions);
 
-  const undercurrent = new Undercurrent({
+  const slipstream = new Slipstream({
     adapters: [
       identityAdapter,
       preferenceAdapter,
@@ -49,19 +64,32 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
     ],
     strategy: new DefaultStrategy(),
     targetPlatform: "mcp",
+    preset: preset ?? "balanced",
+    governance,
+    observability: { includeTrace: true, maxTraceEvents: 64 },
+    modelRouter: pilot
+      ? {
+          enabled: true,
+          caller: pilot.caller,
+          userId,
+          client,
+          defaultProvider: pilot.defaultProvider,
+        }
+      : undefined,
     suggestions: {
       enabled: true,
       writer: writeClient,
       userId,
     },
   });
+  const pilotProcessor = pilot ? new KomatikPilotProcessor(slipstream) : null;
 
   const server = new McpServer(
-    { name: "undercurrent", version: "0.4.0" },
+    { name: "slipstream", version: "2.0.0" },
     { capabilities: { logging: {} } },
   );
 
-  registerTools(server, undercurrent, userId, writeClient);
+  registerTools(server, slipstream, userId, writeClient, pilotProcessor);
   registerResources(
     server,
     identityAdapter,
@@ -88,16 +116,17 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
 
 function registerTools(
   server: McpServer,
-  undercurrent: Undercurrent,
+  slipstream: Slipstream,
   userId: string,
   writeClient?: KomatikWriteClient,
+  pilotProcessor?: KomatikPilotProcessor | null,
 ): void {
   server.registerTool(
     "enrich",
     {
       title: "Enrich Prompt",
       description:
-        "Context engineering pipeline: runs a message through Undercurrent's 4-stage " +
+        "Context engineering pipeline: runs a message through Slipstream's 4-stage " +
         "enrichment (classify → harvest → analyze → compose) with full Komatik user " +
         "context. Returns the enriched prompt, intent classification, assumptions made, " +
         "gaps identified, and processing metadata.",
@@ -116,6 +145,10 @@ function registerTools(
           .enum(["cursor", "claude", "chatgpt", "api", "mcp", "generic"])
           .optional()
           .describe("Target platform for output formatting (defaults to mcp)"),
+        preset: z
+          .enum(["strict-governance", "balanced", "speed-first", "safety-first"])
+          .optional()
+          .describe("Optional governance preset override for this call."),
       },
     },
     async (args) => {
@@ -124,11 +157,12 @@ function registerTools(
         content: t.content,
       }));
 
-      const result = await undercurrent.enrich({
+      const result = await slipstream.enrich({
         message: args.message,
         conversation,
         enrichmentContext: { source: "mcp-external" },
         targetPlatform: (args.platform as TargetPlatform | undefined) ?? "mcp",
+        preset: args.preset as GovernancePreset | undefined,
       });
 
       return {
@@ -179,7 +213,7 @@ function registerTools(
         "without running the enrichment pipeline. Returns raw context layers.",
     },
     async () => {
-      const adapters = undercurrent.adapters;
+      const adapters = slipstream.adapters;
       const layers: ContextLayer[] = [];
 
       const dummyInput = {
@@ -268,7 +302,7 @@ function registerTools(
         content: t.content,
       }));
 
-      const result = await undercurrent.suggestFollowups({
+      const result = await slipstream.suggestFollowups({
         originalMessage: args.originalMessage,
         agentResponse: args.agentResponse,
         conversation,
@@ -306,7 +340,7 @@ function registerTools(
       },
     },
     async (args) => {
-      await undercurrent.recordSuggestionFeedback({
+      await slipstream.recordSuggestionFeedback({
         suggestionId: args.suggestionId,
         outcome: args.outcome,
         editedPromptText: args.editedPromptText,
@@ -316,6 +350,136 @@ function registerTools(
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }],
       };
+    },
+  );
+
+  server.registerTool(
+    "process_with_pilot",
+    {
+      title: "Process Message with Pilot Telemetry",
+      description:
+        "Runs full Slipstream.process() (enrich + model router + caller) and emits " +
+        "request-level ROI telemetry for production pilot rollouts.",
+      inputSchema: {
+        message: z.string().describe("The raw user message to process"),
+        conversation: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant", "system"]),
+              content: z.string(),
+            }),
+          )
+          .optional()
+          .describe("Prior conversation turns for context"),
+        sourceApp: z
+          .string()
+          .optional()
+          .describe("Source app identifier (forge, triage, floe, platform, etc)"),
+        sessionId: z.string().optional(),
+        requestId: z.string().optional(),
+        platform: z
+          .enum(["cursor", "claude", "chatgpt", "api", "mcp", "generic"])
+          .optional()
+          .describe("Target platform for output formatting (defaults to mcp)"),
+        preset: z
+          .enum(["strict-governance", "balanced", "speed-first", "safety-first"])
+          .optional()
+          .describe("Optional governance preset override for this call."),
+      },
+    },
+    async (args) => {
+      if (!pilotProcessor) {
+        return mcpResult({
+          ok: false,
+          error:
+            "pilot_not_configured: createSlipstreamMcpServer requires config.pilot.caller for process_with_pilot.",
+        });
+      }
+
+      const conversation: ConversationTurn[] | undefined = args.conversation?.map((t) => ({
+        role: t.role,
+        content: t.content,
+      }));
+
+      const result = await pilotProcessor.process(
+        {
+          message: args.message,
+          conversation,
+          enrichmentContext: { source: "mcp-process-pilot" },
+          targetPlatform: (args.platform as TargetPlatform | undefined) ?? "mcp",
+          preset: args.preset as GovernancePreset | undefined,
+        },
+        {
+          sourceApp: args.sourceApp ?? "mcp",
+          userId,
+          sessionId: args.sessionId,
+          requestId: args.requestId,
+        },
+      );
+
+      return mcpResult({
+        ok: true,
+        requestId: result.pilotTelemetry.requestId,
+        modelRecommendation: result.modelRecommendation,
+        modelResponse: result.modelResponse,
+        enrichedPrompt: {
+          enrichedMessage: result.enrichedPrompt.enrichedMessage,
+          intent: result.enrichedPrompt.intent,
+          metadata: result.enrichedPrompt.metadata,
+        },
+        pilotTelemetry: result.pilotTelemetry,
+      });
+    },
+  );
+
+  server.registerTool(
+    "record_pilot_outcome",
+    {
+      title: "Record Pilot Outcome",
+      description:
+        "Records whether the processed result was accepted/rejected for pilot ROI summary.",
+      inputSchema: {
+        requestId: z.string().describe("Request id returned from process_with_pilot"),
+        accepted: z.boolean().describe("Whether user accepted the result"),
+        reason: z.string().optional().describe("Optional reason for accept/reject"),
+      },
+    },
+    async (args) => {
+      if (!pilotProcessor) {
+        return mcpResult({
+          ok: false,
+          error:
+            "pilot_not_configured: createSlipstreamMcpServer requires config.pilot.caller for record_pilot_outcome.",
+        });
+      }
+      await pilotProcessor.recordOutcome({
+        requestId: args.requestId,
+        accepted: args.accepted,
+        reason: args.reason,
+      });
+      return mcpResult({ ok: true });
+    },
+  );
+
+  server.registerTool(
+    "get_pilot_roi_summary",
+    {
+      title: "Get Pilot ROI Summary",
+      description:
+        "Returns in-memory ROI summary for the active MCP server session (acceptance, latency, token efficiency).",
+    },
+    async () => {
+      if (!pilotProcessor) {
+        return mcpResult({
+          ok: false,
+          error:
+            "pilot_not_configured: createSlipstreamMcpServer requires config.pilot.caller for get_pilot_roi_summary.",
+        });
+      }
+      return mcpResult({
+        ok: true,
+        summary: pilotProcessor.summarizeRoi(),
+      });
     },
   );
 

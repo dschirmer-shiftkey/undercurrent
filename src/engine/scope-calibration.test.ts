@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { Pipeline } from "./pipeline.js";
 import { DefaultStrategy } from "../strategies/default.js";
-import type { UndercurrentConfig } from "../types.js";
+import type { SlipstreamConfig } from "../types.js";
 
 function createPipeline(): Pipeline {
-  const config: UndercurrentConfig = {
+  const config: SlipstreamConfig = {
     adapters: [],
     strategy: new DefaultStrategy(),
   };

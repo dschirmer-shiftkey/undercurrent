@@ -1,0 +1,206 @@
+{
+  "generatedAt": "2026-05-17T20:58:16.956Z",
+  "cells": [
+    {
+      "name": "balanced/reliability-ci",
+      "fixtures": [
+        "fixtures/replay/reliability-ci.jsonl"
+      ],
+      "platform": "generic",
+      "preset": "balanced",
+      "baseline": {
+        "totalMessages": 4,
+        "depthDistribution": {
+          "none": 1,
+          "deep": 2,
+          "standard": 1
+        },
+        "tokenMultiplier": 4.888888888888889,
+        "interventionsPerMessage": 0,
+        "blockedAssumptionRate": 0,
+        "blockingClarificationRate": 0,
+        "highCascadeRiskRate": 0
+      },
+      "thresholds": {
+        "maxTokenMultiplier": 5.639,
+        "maxDepthDriftL1": 0.55,
+        "minInterventionsPerMessage": 0,
+        "maxInterventionsPerMessage": 0.8,
+        "maxBlockedAssumptionRate": 0.45,
+        "maxBlockingClarificationRate": 0.05,
+        "maxHighCascadeRiskRate": 0.1
+      }
+    },
+    {
+      "name": "balanced/preflight-stress",
+      "fixtures": [
+        "fixtures/replay/preflight-stress.jsonl"
+      ],
+      "platform": "generic",
+      "preset": "balanced",
+      "baseline": {
+        "totalMessages": 6,
+        "depthDistribution": {
+          "deep": 5,
+          "none": 1
+        },
+        "tokenMultiplier": 4.670454545454546,
+        "interventionsPerMessage": 0.8333333333333334,
+        "blockedAssumptionRate": 1,
+        "blockingClarificationRate": 0,
+        "highCascadeRiskRate": 0
+      },
+      "thresholds": {
+        "maxTokenMultiplier": 5.42,
+        "maxDepthDriftL1": 0.55,
+        "minInterventionsPerMessage": 0.233,
+        "maxInterventionsPerMessage": 1.633,
+        "maxBlockedAssumptionRate": 1.45,
+        "maxBlockingClarificationRate": 0.05,
+        "maxHighCascadeRiskRate": 0.1
+      }
+    },
+    {
+      "name": "balanced/governance-stress",
+      "fixtures": [
+        "fixtures/replay/governance-stress.jsonl"
+      ],
+      "platform": "generic",
+      "preset": "balanced",
+      "baseline": {
+        "totalMessages": 5,
+        "depthDistribution": {
+          "deep": 5
+        },
+        "tokenMultiplier": 2.7333333333333334,
+        "interventionsPerMessage": 1.2,
+        "blockedAssumptionRate": 1,
+        "blockingClarificationRate": 0,
+        "highCascadeRiskRate": 0
+      },
+      "thresholds": {
+        "maxTokenMultiplier": 3.483,
+        "maxDepthDriftL1": 0.55,
+        "minInterventionsPerMessage": 0.6,
+        "maxInterventionsPerMessage": 2,
+        "maxBlockedAssumptionRate": 1.45,
+        "maxBlockingClarificationRate": 0.05,
+        "maxHighCascadeRiskRate": 0.1
+      }
+    },
+    {
+      "name": "safety-first/reliability-ci",
+      "fixtures": [
+        "fixtures/replay/reliability-ci.jsonl"
+      ],
+      "platform": "generic",
+      "preset": "safety-first",
+      "baseline": {
+        "totalMessages": 4,
+        "depthDistribution": {
+          "none": 1,
+          "deep": 2,
+          "standard": 1
+        },
+        "tokenMultiplier": 4.888888888888889,
+        "interventionsPerMessage": 0,
+        "blockedAssumptionRate": 0,
+        "blockingClarificationRate": 0,
+        "highCascadeRiskRate": 0
+      },
+      "thresholds": {
+        "maxTokenMultiplier": 5.639,
+        "maxDepthDriftL1": 0.55,
+        "minInterventionsPerMessage": 0,
+        "maxInterventionsPerMessage": 0.8,
+        "maxBlockedAssumptionRate": 0.45,
+        "maxBlockingClarificationRate": 0.05,
+        "maxHighCascadeRiskRate": 0.1
+      }
+    },
+    {
+      "name": "safety-first/preflight-stress",
+      "fixtures": [
+        "fixtures/replay/preflight-stress.jsonl"
+      ],
+      "platform": "generic",
+      "preset": "safety-first",
+      "baseline": {
+        "totalMessages": 6,
+        "depthDistribution": {
+          "deep": 6
+        },
+        "tokenMultiplier": 5.091836734693878,
+        "interventionsPerMessage": 0.6666666666666666,
+        "blockedAssumptionRate": 1,
+        "blockingClarificationRate": 0.16666666666666666,
+        "highCascadeRiskRate": 0.16666666666666666
+      },
+      "thresholds": {
+        "maxTokenMultiplier": 5.842,
+        "maxDepthDriftL1": 0.55,
+        "minInterventionsPerMessage": 0.067,
+        "maxInterventionsPerMessage": 1.467,
+        "maxBlockedAssumptionRate": 1.45,
+        "maxBlockingClarificationRate": 0.217,
+        "maxHighCascadeRiskRate": 0.217
+      }
+    },
+    {
+      "name": "safety-first/governance-stress",
+      "fixtures": [
+        "fixtures/replay/governance-stress.jsonl"
+      ],
+      "platform": "generic",
+      "preset": "safety-first",
+      "baseline": {
+        "totalMessages": 5,
+        "depthDistribution": {
+          "deep": 5
+        },
+        "tokenMultiplier": 2.7333333333333334,
+        "interventionsPerMessage": 1.2,
+        "blockedAssumptionRate": 1,
+        "blockingClarificationRate": 0,
+        "highCascadeRiskRate": 0
+      },
+      "thresholds": {
+        "maxTokenMultiplier": 3.483,
+        "maxDepthDriftL1": 0.55,
+        "minInterventionsPerMessage": 0.6,
+        "maxInterventionsPerMessage": 2,
+        "maxBlockedAssumptionRate": 1.45,
+        "maxBlockingClarificationRate": 0.05,
+        "maxHighCascadeRiskRate": 0.1
+      }
+    },
+    {
+      "name": "strict-governance/governance-stress",
+      "fixtures": [
+        "fixtures/replay/governance-stress.jsonl"
+      ],
+      "platform": "generic",
+      "preset": "strict-governance",
+      "baseline": {
+        "totalMessages": 5,
+        "depthDistribution": {
+          "deep": 5
+        },
+        "tokenMultiplier": 2.7333333333333334,
+        "interventionsPerMessage": 1.2,
+        "blockedAssumptionRate": 1,
+        "blockingClarificationRate": 0,
+        "highCascadeRiskRate": 0
+      },
+      "thresholds": {
+        "maxTokenMultiplier": 3.483,
+        "maxDepthDriftL1": 0.55,
+        "minInterventionsPerMessage": 0.6,
+        "maxInterventionsPerMessage": 2,
+        "maxBlockedAssumptionRate": 1.45,
+        "maxBlockingClarificationRate": 0.05,
+        "maxHighCascadeRiskRate": 0.1
+      }
+    }
+  ]
+}

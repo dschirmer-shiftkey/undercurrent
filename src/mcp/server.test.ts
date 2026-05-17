@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createUndercurrentMcpServer } from "./server.js";
+import { createSlipstreamMcpServer } from "./server.js";
 import { createMockClient } from "../komatik/testing.js";
 import type {
   KomatikQueryResult,
@@ -285,9 +285,9 @@ function buildEmptyConfig() {
   return { client, userId: "user-1" };
 }
 
-describe("createUndercurrentMcpServer", () => {
+describe("createSlipstreamMcpServer", () => {
   it("creates a server instance", () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     expect(server).toBeDefined();
     expect(server.server).toBeDefined();
   });
@@ -295,7 +295,7 @@ describe("createUndercurrentMcpServer", () => {
 
 describe("enrich tool", () => {
   it("enriches a message with Komatik user context", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const tool = getInternals(server)._registeredTools["enrich"]!;
 
     const result = await tool.handler({ message: "help me fix the slow API endpoints" }, EXTRA);
@@ -311,7 +311,7 @@ describe("enrich tool", () => {
   });
 
   it("includes komatik context in enrichment", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const tool = getInternals(server)._registeredTools["enrich"]!;
 
     const result = await tool.handler({ message: "what projects am I working on" }, EXTRA);
@@ -325,7 +325,7 @@ describe("enrich tool", () => {
 
 describe("get_context tool", () => {
   it("returns context layers from all adapters", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const tool = getInternals(server)._registeredTools["get_context"]!;
 
     const result = await tool.handler({}, EXTRA);
@@ -347,7 +347,7 @@ describe("get_context tool", () => {
   });
 
   it("returns profile summary in identity layer", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const tool = getInternals(server)._registeredTools["get_context"]!;
 
     const result = await tool.handler({}, EXTRA);
@@ -361,7 +361,7 @@ describe("get_context tool", () => {
   });
 
   it("gracefully handles empty data", async () => {
-    const server = createUndercurrentMcpServer(buildEmptyConfig());
+    const server = createSlipstreamMcpServer(buildEmptyConfig());
     const tool = getInternals(server)._registeredTools["get_context"]!;
 
     const result = await tool.handler({}, EXTRA);
@@ -375,7 +375,7 @@ describe("get_context tool", () => {
 describe("digest_tool_result tool", () => {
   it("returns firstSeen and inserts a new cache row", async () => {
     const rows: ToolCacheRow[] = [];
-    const server = createUndercurrentMcpServer({
+    const server = createSlipstreamMcpServer({
       ...buildMockConfig(),
       writeClient: buildMockWriteClient(rows),
     });
@@ -386,7 +386,7 @@ describe("digest_tool_result tool", () => {
         toolSlug: "read_file",
         requestSummary: "read package.json",
         requestKey: { path: "package.json" },
-        result: '{"name":"undercurrent"}',
+        result: '{"name":"@komatik/slipstream"}',
       },
       EXTRA,
     );
@@ -394,21 +394,21 @@ describe("digest_tool_result tool", () => {
     const parsed = parseToolPayload(result);
     expect(parsed.firstSeen).toBe(true);
     expect(parsed.cached).toBe(false);
-    expect(parsed.result).toBe('{"name":"undercurrent"}');
+    expect(parsed.result).toBe('{"name":"@komatik/slipstream"}');
     expect(rows.length).toBe(1);
-    expect(rows[0]!.result_text).toBe('{"name":"undercurrent"}');
+    expect(rows[0]!.result_text).toBe('{"name":"@komatik/slipstream"}');
   });
 
   it("returns a cache reference for repeated identical content", async () => {
     const rows: ToolCacheRow[] = [];
     const writeClient = buildMockWriteClient(rows);
-    const server = createUndercurrentMcpServer({ ...buildMockConfig(), writeClient });
+    const server = createSlipstreamMcpServer({ ...buildMockConfig(), writeClient });
     const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
     const args = {
       toolSlug: "read_file",
       requestSummary: "read package.json",
       requestKey: { path: "package.json" },
-      result: '{"name":"undercurrent"}',
+      result: '{"name":"@komatik/slipstream"}',
     };
 
     await tool.handler(args, EXTRA);
@@ -425,7 +425,7 @@ describe("digest_tool_result tool", () => {
   it("returns fresh content and flags drift when the same request changes", async () => {
     const rows: ToolCacheRow[] = [];
     const writeClient = buildMockWriteClient(rows);
-    const server = createUndercurrentMcpServer({ ...buildMockConfig(), writeClient });
+    const server = createSlipstreamMcpServer({ ...buildMockConfig(), writeClient });
     const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
 
     await tool.handler(
@@ -454,7 +454,7 @@ describe("digest_tool_result tool", () => {
   });
 
   it("passes through unchanged when no write client is configured", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
 
     const result = await tool.handler(
@@ -476,7 +476,7 @@ describe("digest_tool_result tool", () => {
   it("canonicalizes object request keys", async () => {
     const rows: ToolCacheRow[] = [];
     const writeClient = buildMockWriteClient(rows);
-    const server = createUndercurrentMcpServer({ ...buildMockConfig(), writeClient });
+    const server = createSlipstreamMcpServer({ ...buildMockConfig(), writeClient });
     const tool = getInternals(server)._registeredTools["digest_tool_result"]!;
 
     await tool.handler(
@@ -505,7 +505,7 @@ describe("digest_tool_result tool", () => {
 
   it("stores oversized results as ref-only", async () => {
     const rows: ToolCacheRow[] = [];
-    const server = createUndercurrentMcpServer({
+    const server = createSlipstreamMcpServer({
       ...buildMockConfig(),
       writeClient: buildMockWriteClient(rows),
     });
@@ -529,9 +529,65 @@ describe("digest_tool_result tool", () => {
   });
 });
 
+describe("pilot tools", () => {
+  it("process_with_pilot returns not-configured error when no pilot caller exists", async () => {
+    const server = createSlipstreamMcpServer(buildMockConfig());
+    const tool = getInternals(server)._registeredTools["process_with_pilot"]!;
+
+    const result = await tool.handler({ message: "fix auth" }, EXTRA);
+    const parsed = parseToolPayload(result);
+    expect(parsed.ok).toBe(false);
+    expect(String(parsed.error)).toContain("pilot_not_configured");
+  });
+
+  it("runs process_with_pilot and records ROI when pilot caller configured", async () => {
+    const server = createSlipstreamMcpServer({
+      ...buildMockConfig(),
+      pilot: {
+        caller: async ({ model, provider }) => ({
+          content: "model-output",
+          model,
+          provider,
+          inputTokens: 120,
+          outputTokens: 44,
+          latencyMs: 130,
+        }),
+      },
+    });
+    const processTool = getInternals(server)._registeredTools["process_with_pilot"]!;
+    const outcomeTool = getInternals(server)._registeredTools["record_pilot_outcome"]!;
+    const summaryTool = getInternals(server)._registeredTools["get_pilot_roi_summary"]!;
+
+    const processResult = await processTool.handler(
+      {
+        message: "fix auth crash in login.ts",
+        sourceApp: "forge",
+        requestId: "pilot-req-1",
+      },
+      EXTRA,
+    );
+    const parsedProcess = parseToolPayload(processResult);
+    expect(parsedProcess.ok).toBe(true);
+    expect(parsedProcess.requestId).toBe("pilot-req-1");
+    expect(parsedProcess.pilotTelemetry).toBeDefined();
+
+    await outcomeTool.handler(
+      { requestId: "pilot-req-1", accepted: true, reason: "works well" },
+      EXTRA,
+    );
+    const summary = await summaryTool.handler({}, EXTRA);
+    const parsedSummary = parseToolPayload(summary);
+    const roi = parsedSummary.summary as Record<string, unknown>;
+    expect(parsedSummary.ok).toBe(true);
+    expect(roi.totalRequests).toBe(1);
+    expect(roi.acceptedCount).toBe(1);
+    expect(Number(roi.acceptanceRate)).toBe(1);
+  });
+});
+
 describe("resources", () => {
   it("registers 7 resources", () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const resources = getInternals(server)._registeredResources;
 
     const keys = Object.keys(resources);
@@ -546,7 +602,7 @@ describe("resources", () => {
   });
 
   it("profile resource returns user identity", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const resource = getInternals(server)._registeredResources["komatik://user/profile"]!;
 
     const result = await resource.readCallback(new URL("komatik://user/profile"), EXTRA);
@@ -556,7 +612,7 @@ describe("resources", () => {
   });
 
   it("projects resource returns active work", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const resource = getInternals(server)._registeredResources["komatik://user/projects"]!;
 
     const result = await resource.readCallback(new URL("komatik://user/projects"), EXTRA);
@@ -570,13 +626,13 @@ describe("resources", () => {
 
 describe("prompts", () => {
   it("registers enrich-message prompt", () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const prompts = getInternals(server)._registeredPrompts;
     expect(prompts["enrich-message"]).toBeDefined();
   });
 
   it("enrich-message returns context-loaded system prompt", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const prompt = getInternals(server)._registeredPrompts["enrich-message"]!;
 
     const result = await prompt.callback({}, EXTRA);
@@ -589,7 +645,7 @@ describe("prompts", () => {
   });
 
   it("enrich-message appends user message when provided", async () => {
-    const server = createUndercurrentMcpServer(buildMockConfig());
+    const server = createSlipstreamMcpServer(buildMockConfig());
     const prompt = getInternals(server)._registeredPrompts["enrich-message"]!;
 
     const result = await prompt.callback({ message: "How do I deploy?" }, EXTRA);
@@ -598,7 +654,7 @@ describe("prompts", () => {
   });
 
   it("handles empty context gracefully in prompt", async () => {
-    const server = createUndercurrentMcpServer(buildEmptyConfig());
+    const server = createSlipstreamMcpServer(buildEmptyConfig());
     const prompt = getInternals(server)._registeredPrompts["enrich-message"]!;
 
     const result = await prompt.callback({}, EXTRA);

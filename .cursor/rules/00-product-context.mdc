@@ -1,15 +1,15 @@
 ---
-description: Undercurrent product context and guardrails
+description: Slipstream product context and guardrails
 globs:
   - "**/*"
 ---
 
-# Undercurrent — Cursor context
+# Slipstream — Cursor context
 
 ## Umbrella
 
 - **Komatik** (parent repo) is the marketplace, prebuild pipeline, and knowledge flywheel.
-- **Undercurrent** is **Cross-Cutting Infrastructure**: an invisible prompt enrichment SDK that closes the gap between vague human input and precise AI understanding.
+- **Slipstream** is **Cross-Cutting Infrastructure**: an invisible prompt enrichment SDK that closes the gap between vague human input and precise AI understanding.
 - Operates at the intent layer — upstream of RAG (content retrieval), upstream of CoT (model reasoning), upstream of agent routing.
 - **Container, not contents** — pluggable adapters, strategies, and transports. Domain logic is one consumer, not the core.
 - **Expand, not narrow** — amplify creative possibilities from vague input (diverge → explore → converge → build).
@@ -32,7 +32,7 @@ Read **`README.md`**.
 
 ```
 src/
-├── index.ts           Public API (Undercurrent class: enrich + process)
+├── index.ts           Public API (Slipstream class: enrich + process)
 ├── types.ts           Core protocol types (all components speak this)
 ├── engine/
 │   ├── pipeline.ts          4-stage pipeline + process() orchestration
@@ -61,7 +61,7 @@ src/
 ├── mcp/                 External MCP server (@komatik/slipstream/mcp)
 │   ├── postgrest-client.ts  Lightweight PostgREST adapter (native fetch)
 │   ├── server.ts        McpServer: 2 tools, 7 resources, 1 prompt
-│   └── index.ts         Bin entry (undercurrent-mcp)
+│   └── index.ts         Bin entry (slipstream-mcp)
 ├── playground/          Live pipeline test harness (not compiled, runs via tsx)
 │   ├── transcript-parser.ts  Parse .jsonl agent transcripts → pipeline input
 │   ├── formatter.ts     Colorized stage-by-stage output formatting
@@ -80,7 +80,7 @@ Three strategies ship with the SDK:
 
 ## Komatik Identity Layer
 
-Seven adapters in `src/komatik/` make Undercurrent identity-aware via the Komatik ID (Supabase user UUID). Import from `@komatik/slipstream/komatik`.
+Seven adapters in `src/komatik/` make Slipstream identity-aware via the Komatik ID (Supabase user UUID). Import from `@komatik/slipstream/komatik`.
 
 - **KomatikIdentityAdapter** (priority 0) — queries `komatik_profiles`. Who is this user, their role, products used.
 - **KomatikPreferenceAdapter** (priority 0) — queries `user_preferences`. Tone, style, code conventions, always/never assume rules.
@@ -96,7 +96,7 @@ All accept `{ client: KomatikDataClient, userId: string }`. The `KomatikDataClie
 
 ## External MCP Server
 
-An MCP server (`src/mcp/`) exposes Undercurrent to external tools (Cursor, Claude, AntiGravity) via stdio transport. Users carry their Komatik identity everywhere.
+An MCP server (`src/mcp/`) exposes Slipstream to external tools (Cursor, Claude, AntiGravity) via stdio transport. Users carry their Komatik identity everywhere.
 
 **Tools**: `enrich` (full 4-stage pipeline), `get_context` (raw context layers from all 7 adapters)
 **Resources**: `komatik://user/profile`, `komatik://user/preferences`, `komatik://user/memory`, `komatik://user/history`, `komatik://user/outcomes`, `komatik://user/projects`, `komatik://user/tools`
@@ -108,7 +108,7 @@ Configured via env vars: `KOMATIK_SUPABASE_URL`, `KOMATIK_SUPABASE_KEY`, `KOMATI
 
 ## Session Lifecycle Management
 
-Invisible context management that eliminates the "session tax". Configured via `UndercurrentConfig.sessionMonitor`.
+Invisible context management that eliminates the "session tax". Configured via `SlipstreamConfig.sessionMonitor`.
 
 - **SessionMonitor** — tracks health (cold-start → healthy → warm → degrading → critical) based on message count, estimated tokens, elapsed time, and topic drift
 - **Compactor** — distills degrading sessions via heuristic or LLM-assisted compaction
@@ -139,12 +139,12 @@ Per-adapter status reporting in `EnrichmentMetadata.adapterResults`:
 
 ## Intelligent Model Router
 
-Per-user, per-domain model selection. Komatik-internal first. Configured via `UndercurrentConfig.modelRouter`.
+Per-user, per-domain model selection. Komatik-internal first. Configured via `SlipstreamConfig.modelRouter`.
 
 - **TaskDomainClassifier** — maps `IntentSignal` to 6 domains (coding, creative, analysis, planning, debugging, conversation)
 - **ModelScorer** — ranks active models using success rate, acceptance rate, latency, and affinity heuristics (affinity auto-decays with data)
 - **KomatikModelUsageAdapter** — queries `model_availability` + `llm_usage` + `enrichment_outcomes`
-- `Undercurrent.process()` = enrich → classify → score → call via pluggable `ModelCallerFn`
+- `Slipstream.process()` = enrich → classify → score → call via pluggable `ModelCallerFn`
 - `enrich()` unchanged; `process()` is additive; zero new runtime deps
 
 ## Verification

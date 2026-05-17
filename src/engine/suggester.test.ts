@@ -63,6 +63,22 @@ describe("analyzeResponse", () => {
     expect(signals.referencedTerms).toContain("OpenFunction");
     expect(signals.referencedTerms).not.toContain("SecretToken");
   });
+
+  it("extracts mixed-case identifiers without regex backtracking paths", () => {
+    const signals = analyzeResponse(
+      "Touched HTTPServer, getUserToken, and APIClient while skipping plain words.",
+      [],
+    );
+    expect(signals.referencedTerms).toContain("HTTPServer");
+    expect(signals.referencedTerms).toContain("getUserToken");
+    expect(signals.referencedTerms).toContain("APIClient");
+  });
+
+  it("handles large noisy text and still finds identifiers", () => {
+    const noise = "a".repeat(20_000);
+    const signals = analyzeResponse(`${noise} ParseSessionState ${noise}`, []);
+    expect(signals.referencedTerms).toContain("ParseSessionState");
+  });
 });
 
 describe("Suggester.suggest (disabled)", () => {

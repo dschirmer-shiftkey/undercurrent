@@ -67,7 +67,7 @@ describe("createMiddleware", () => {
     expect(pipeline.enrich).not.toHaveBeenCalled();
   });
 
-  it("enriches message and attaches to req.undercurrent", async () => {
+  it("enriches message and attaches to req.slipstream", async () => {
     const pipeline = mockPipeline();
     const middleware = createMiddleware(pipeline);
     const req = {
@@ -85,7 +85,7 @@ describe("createMiddleware", () => {
       message: "fix the bug",
       conversation: [{ role: "user", content: "help" }],
     });
-    expect((req as { undercurrent?: EnrichedPrompt }).undercurrent).toBe(stubEnrichedPrompt);
+    expect((req as { slipstream?: EnrichedPrompt }).slipstream).toBe(stubEnrichedPrompt);
     expect(next).toHaveBeenCalledWith();
   });
 
@@ -139,7 +139,7 @@ describe("createMiddleware", () => {
     await middleware(req, res, next);
 
     expect(req.enrichment).toBe(stubEnrichedPrompt);
-    expect((req as { undercurrent?: unknown }).undercurrent).toBeUndefined();
+    expect((req as { slipstream?: unknown }).slipstream).toBeUndefined();
   });
 });
 

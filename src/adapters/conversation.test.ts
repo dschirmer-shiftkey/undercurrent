@@ -233,6 +233,30 @@ describe("ConversationAdapter", () => {
       const repeatLayer = layers.find((l) => l.summary.includes("Repeated context fetches"));
       expect(repeatLayer).toBeUndefined();
     });
+
+    it("detects quoted windows-style file paths across turns", async () => {
+      const adapter = new ConversationAdapter();
+      const layers = await adapter.gather(
+        makeInput([
+          {
+            role: "assistant",
+            content: 'Checked "C:\\\\repo\\\\src\\\\auth\\\\login.ts" and found the issue.',
+          },
+          { role: "user", content: "please confirm once more" },
+          {
+            role: "assistant",
+            content: "Re-reading C:\\\\repo\\\\src\\\\auth\\\\login.ts to validate fix.",
+          },
+        ]),
+      );
+
+      const repeatLayer = layers.find((l) => l.summary.includes("Repeated context fetches"));
+      expect(repeatLayer).toBeDefined();
+      const reads = (
+        repeatLayer!.data as { repeatedReads: Array<{ target: string; kind: string }> }
+      ).repeatedReads;
+      expect(reads.some((r) => r.kind === "file" && r.target.includes("login.ts"))).toBe(true);
+    });
   });
 
   describe("abandonment detection", () => {
