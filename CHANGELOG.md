@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0] - 2026-05-17
+
+### Added — Graceful degradation when Komatik backend is unavailable
+
+- **`Slipstream.healthCheck()`** — lightweight pre-flight check returning `{ status: 'healthy' | 'degraded' | 'unavailable', adapters: AdapterHealth[], modelRouter?, checkedAt, totalLatencyMs }`. Lets the host (Komatik IDE) detect backend state without running a full enrichment. Never throws — adapter failures are reported as `error` entries.
+- **`SlipstreamConfig.failureMode`** — `'degraded'` (default) records adapter errors in `metadata.degradation` but never throws; `'strict'` propagates the first adapter failure. Use degraded for production IDE flows so a Supabase hiccup doesn't kill the chat.
+- **`SlipstreamConfig.adapterTimeoutMs`** — per-adapter timeout. Prevents one slow remote-backed adapter from eating the whole pipeline budget. Falls back to `timeoutMs`.
+- **`metadata.degradation`** on `enrich()` — `{ failedAdapters, timedOutAdapters, noContextHarvested, modelRouterDegraded?, failedAdapterNames[] }`. Absent when everything succeeded, present when one or more adapters errored or the model router fell back. Lets hosts detect partial Supabase outages without walking the full `adapterResults` map.
+- New exported types: `DegradationSummary`, `HealthStatus`, `HealthCheckResult`, `AdapterHealth`.
+
+### Changed
+
+- `Slipstream.process()` is now defensive against `KomatikModelUsageAdapter.loadScoringData()` failure. When scoring data load throws, the router falls back to its static affinity defaults instead of propagating the error. The host sees `metadata.degradation.modelRouterDegraded === true`. (In `strict` mode this still throws.)
+- Adapter `gather()` calls now use the per-adapter `adapterTimeoutMs` budget (defaults to `timeoutMs`).
+
+### Why
+
+Today's failure mode: if Supabase hiccups, `Slipstream.enrich()` can throw mid-adapter and the IDE chat endpoint returns an error. The IDE's `maybeEnrich` catches it and falls back to the original message, so the user gets a response — but loses all enrichment. With degraded mode, partial backend failure produces partial enrichment instead of total failure: the working adapters (`ConversationAdapter`, etc.) still contribute, and the host gets a clear signal in `metadata.degradation` that some adapters didn't run.
+
 ## [2.1.0] - 2026-05-17
 
 ### Added

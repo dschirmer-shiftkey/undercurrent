@@ -156,6 +156,55 @@ export interface EnrichmentMetadata {
    * `getModelConfigForPhase(phase, suggestedTier.tier)` without translation.
    */
   tierRecommendation?: TierRecommendation;
+  /**
+   * Backend degradation summary. Present when one or more adapters errored
+   * or the model router fell back to defaults; absent when everything
+   * succeeded normally. Lets hosts (the Komatik IDE) detect partial
+   * Supabase outages without walking the full `adapterResults` map.
+   */
+  degradation?: DegradationSummary;
+}
+
+export interface DegradationSummary {
+  /** Number of adapters that errored this enrichment. */
+  failedAdapters: number;
+  /** Subset of failedAdapters that failed specifically with a timeout. */
+  timedOutAdapters: number;
+  /** True when zero context was harvested from any adapter (full backend silence). */
+  noContextHarvested: boolean;
+  /** True when the model router fell back to defaults due to scoring-data load failure. */
+  modelRouterDegraded?: boolean;
+  /** Adapter names that errored, sorted by name for stable output. */
+  failedAdapterNames: string[];
+}
+
+// ─── Health Check ──────────────────────────────────────────────────────────
+// Lightweight pre-flight check the host can call to detect backend state
+// without running a full enrichment. Useful for "Slipstream is down" status
+// badges in the IDE.
+
+export type HealthStatus = "healthy" | "degraded" | "unavailable";
+
+export interface AdapterHealth {
+  name: string;
+  status: "ok" | "unavailable" | "error";
+  latencyMs: number;
+  error?: string;
+}
+
+export interface HealthCheckResult {
+  /**
+   * Aggregate health:
+   *   - "healthy"    — all adapters available and the model router (if configured) responded
+   *   - "degraded"   — some adapters failed or the model router fell back, but enrichment is usable
+   *   - "unavailable" — zero adapters available (Slipstream cannot enrich)
+   */
+  status: HealthStatus;
+  adapters: AdapterHealth[];
+  modelRouter?: { status: "ok" | "unavailable" | "error"; latencyMs: number; error?: string };
+  checkedAt: number;
+  /** Total time spent on the health check (caps at pipeline timeout). */
+  totalLatencyMs: number;
 }
 
 // ─── Cost Tier Recommendation ──────────────────────────────────────────────
@@ -323,7 +372,23 @@ export interface SlipstreamConfig {
   strategy: EnrichmentStrategy;
   maxClarifications?: number;
   assumptionConfidenceThreshold?: number;
+  /** Pipeline-wide stage timeout (intent, gather, analyze, compose). Default 10_000ms. */
   timeoutMs?: number;
+  /**
+   * Per-adapter `gather()` timeout. When a remote-backed adapter is slow,
+   * this caps the per-adapter cost so it doesn't eat the whole pipeline
+   * budget. Defaults to `timeoutMs`.
+   */
+  adapterTimeoutMs?: number;
+  /**
+   * How to handle adapter / backend failures:
+   *   - "degraded" (default): adapter errors are recorded in
+   *     `metadata.adapterResults` and `metadata.degradation`, but never
+   *     throw. Pipeline continues with whatever context succeeded.
+   *   - "strict": adapter errors propagate. Use when downstream consumers
+   *     depend on specific context being present.
+   */
+  failureMode?: "degraded" | "strict";
   targetPlatform?: TargetPlatform;
   preset?: GovernancePreset;
   governance?: Partial<MemoryGovernancePolicy>;
