@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-05-17
+
+### Added
+
+- **`enrich().metadata.tierRecommendation`** — per-message tier recommendation (`budget` / `balanced` / `premium`) derived from intent + scope + emotional load + enrichment depth. Names match Komatik's `CostTier` verbatim so the Komatik IDE can drop it straight into `getModelConfigForPhase(phase, tier)`. Includes `{ tier, confidence, reasoning, signals }`. Pure heuristic, deterministic, no LLM.
+- `CostTier` and `TierRecommendation` types exported from `@komatik/slipstream`.
+- `recommendTier(intent, depth)` helper exported for callers that want to compute a recommendation outside the pipeline.
+- `KomatikPreferenceClient` now exposes the **full `UndercurrentSettings`** schema matching the live IDE (`enabled`, `enrichmentDepth`, `strategy`, `showEnrichmentDetails`, new `autoTier`, new `defaultTier`). Replaces the old `getTierBias` / `setTierBias` methods which used a fabricated key name.
+- `runTierRecommendationHarness` — methodology harness comparing user-picked-tier strategies against `slipstream-recommended`, with the host's tier→model mapping held constant. Replaces the unmerged `runAcceptanceHarness` which compared the wrong dimensions.
+- README "Komatik IDE integration" section documenting the actual integration shape.
+
+### Changed
+
+- `TierBias` is now an alias for `CostTier`, fixing a transcription error where the documented value `"premier"` was actually `"premium"` in the Komatik schema. Old `"premier"` literals will no longer typecheck. Stored values are sanitized at read time.
+- `KomatikPreferenceClient` read path now sanitizes against the real key schema — invalid stored values (e.g., a legacy `"premier"` literal in a `defaultTier` slot) silently fall back to defaults rather than propagating to callers.
+
+### Deprecated
+
+- **`SlipstreamSessionManager`** — built for an integration shape the live Komatik IDE doesn't need. The IDE already owns session lifecycle, model selection, telemetry, and memory. Remains exported for non-IDE consumers; will be removed in v3 unless one surfaces. For Komatik IDE wiring, use `slipstream.enrich()` + `metadata.tierRecommendation` directly. See README.
+- **`TIER_WEIGHT_PRESETS`** — the `{ successRate, acceptanceRate, latency, affinity }` weighting scheme does not match how Komatik's router actually picks models (cost ceilings + quality floors). Only useful when `SlipstreamSessionManager` is wired as a standalone router. Will be removed with the manager in v3.
+
+### Fixed
+
+- Tier name transcription: `"premier"` → `"premium"` throughout (alias preserved for read-time sanitization).
+- `KomatikPreferenceClient.updateUndercurrentSettings` preserves other JSON-bag keys (forward-compat with IDE-only settings).
+
 ## [2.0.0] - 2026-05-17
 
 ### BREAKING

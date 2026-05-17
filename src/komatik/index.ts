@@ -28,8 +28,31 @@ export type {
   SessionEvent,
   SessionManagerConfig,
 } from "./session-manager.js";
-export { KomatikPreferenceClient } from "./preference-client.js";
-export type { KomatikPreferenceClientOptions } from "./preference-client.js";
+export {
+  KomatikPreferenceClient,
+  DEFAULT_UNDERCURRENT_SETTINGS,
+} from "./preference-client.js";
+export type {
+  KomatikPreferenceClientOptions,
+  UndercurrentSettings,
+  EnrichmentDepth,
+  StrategyChoice,
+} from "./preference-client.js";
+export {
+  runTierRecommendationHarness,
+  DEFAULT_HARNESS_MODELS,
+  DEFAULT_HARNESS_TIER_MAP,
+} from "./tier-recommendation-harness.js";
+export type {
+  HarnessMessage as TierHarnessMessage,
+  HarnessVariant as TierHarnessVariant,
+  HarnessOptions as TierHarnessOptions,
+  HarnessRunResult as TierHarnessRunResult,
+  HarnessComparison as TierHarnessComparison,
+  SimulatedModel as TierHarnessSimulatedModel,
+  TierToModelMap as TierHarnessTierToModelMap,
+  VariantStrategy as TierHarnessVariantStrategy,
+} from "./tier-recommendation-harness.js";
 export type { KomatikModelUsageAdapterOptions } from "./model-usage-adapter.js";
 export { createMockClient, createMockWriteClient } from "./testing.js";
 export type { MockWriteLog } from "./testing.js";

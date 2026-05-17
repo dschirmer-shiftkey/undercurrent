@@ -191,7 +191,7 @@ export class Slipstream {
   }
 }
 
-export { Pipeline } from "./engine/pipeline.js";
+export { Pipeline, recommendTier } from "./engine/pipeline.js";
 export type { EnrichInput } from "./engine/pipeline.js";
 export { SessionMonitor, estimateTokens } from "./engine/session-monitor.js";
 export { Compactor } from "./engine/compactor.js";
@@ -264,6 +264,8 @@ export type {
   CascadeRisk,
   CascadeRiskLevel,
   Correction,
+  CostTier,
+  TierRecommendation,
   TaskDomain,
   TargetPlatform,
   SlipstreamConfig,

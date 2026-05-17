@@ -132,9 +132,9 @@ describe("SlipstreamSessionManager", () => {
       const handle = await manager.startSession({
         sessionId: "sess-1",
         scope: "sandbox",
-        user: { id: "u", tierBias: "premier" },
+        user: { id: "u", tierBias: "premium" },
       });
-      expect(handle.tierBias).toBe("premier");
+      expect(handle.tierBias).toBe("premium");
     });
 
     it("falls back to defaultTierBias when user has none", async () => {
@@ -149,7 +149,7 @@ describe("SlipstreamSessionManager", () => {
 
     it("maps each tier to a distinct scoring weight preset", () => {
       expect(TIER_WEIGHT_PRESETS.budget.latency).toBeGreaterThan(TIER_WEIGHT_PRESETS.balanced.latency);
-      expect(TIER_WEIGHT_PRESETS.premier.acceptanceRate).toBeGreaterThan(TIER_WEIGHT_PRESETS.balanced.acceptanceRate);
+      expect(TIER_WEIGHT_PRESETS.premium.acceptanceRate).toBeGreaterThan(TIER_WEIGHT_PRESETS.balanced.acceptanceRate);
       expect(TIER_WEIGHT_PRESETS.budget.acceptanceRate).toBeLessThan(TIER_WEIGHT_PRESETS.balanced.acceptanceRate);
     });
   });
@@ -248,7 +248,7 @@ describe("SlipstreamSessionManager", () => {
     it("startSession uses the user's stored tier_bias when no override is passed", async () => {
       const { manager } = makeManager({
         storedPrefs: [
-          { user_id: "u-1", undercurrent_settings: { tier_bias: "premier" } },
+          { user_id: "u-1", undercurrent_settings: { defaultTier: "premium" } },
         ],
       });
       const handle = await manager.startSession({
@@ -256,13 +256,13 @@ describe("SlipstreamSessionManager", () => {
         scope: "project",
         user: { id: "u-1" },
       });
-      expect(handle.tierBias).toBe("premier");
+      expect(handle.tierBias).toBe("premium");
     });
 
     it("explicit override on startSession beats the stored preference", async () => {
       const { manager } = makeManager({
         storedPrefs: [
-          { user_id: "u-1", undercurrent_settings: { tier_bias: "premier" } },
+          { user_id: "u-1", undercurrent_settings: { defaultTier: "premium" } },
         ],
       });
       const handle = await manager.startSession({
@@ -275,14 +275,14 @@ describe("SlipstreamSessionManager", () => {
 
     it("falls back to defaultTierBias when neither override nor stored preference exists", async () => {
       const { manager } = makeManager({
-        managerOverrides: { defaultTierBias: "premier" },
+        managerOverrides: { defaultTierBias: "premium" },
       });
       const handle = await manager.startSession({
         sessionId: "sess-1",
         scope: "sandbox",
         user: { id: "u-1" },
       });
-      expect(handle.tierBias).toBe("premier");
+      expect(handle.tierBias).toBe("premium");
     });
 
     it("setTierBias persists the choice and caches it for the next startSession", async () => {
@@ -291,7 +291,7 @@ describe("SlipstreamSessionManager", () => {
 
       expect(writes.user_preferences?.upserts).toHaveLength(1);
       const upsert = writes.user_preferences!.upserts[0]!;
-      expect(upsert.undercurrent_settings).toEqual({ tier_bias: "budget" });
+      expect(upsert.undercurrent_settings).toEqual({ defaultTier: "budget" });
 
       // Cache hit — next startSession reads the value without hitting the DB.
       const handle = await manager.startSession({
@@ -305,20 +305,20 @@ describe("SlipstreamSessionManager", () => {
     it("getStoredTierBias returns the cached value after setTierBias", async () => {
       const { manager } = makeManager();
       expect(await manager.getStoredTierBias("u-1")).toBeNull();
-      await manager.setTierBias("u-1", "premier");
-      expect(await manager.getStoredTierBias("u-1")).toBe("premier");
+      await manager.setTierBias("u-1", "premium");
+      expect(await manager.getStoredTierBias("u-1")).toBe("premium");
     });
 
     it("invalidateTierBiasCache forces the next read to hit the DB", async () => {
       const { manager } = makeManager({
         storedPrefs: [
-          { user_id: "u-1", undercurrent_settings: { tier_bias: "premier" } },
+          { user_id: "u-1", undercurrent_settings: { defaultTier: "premium" } },
         ],
       });
       await manager.getStoredTierBias("u-1");
       manager.invalidateTierBiasCache("u-1");
       // After invalidation, getStoredTierBias re-queries — value still resolves.
-      expect(await manager.getStoredTierBias("u-1")).toBe("premier");
+      expect(await manager.getStoredTierBias("u-1")).toBe("premium");
     });
   });
 
