@@ -138,7 +138,7 @@ describe("composeForPlatform", () => {
       const result = composeForPlatform(makeInput({ platform: "mcp" }));
       expect(result).toMatch(/^fix the auth thing/);
       expect(result).toContain("---");
-      expect(result).toContain("Undercurrent Context:");
+      expect(result).toContain("Slipstream Context:");
       expect(result).toContain("[komatik-identity]");
       expect(result).toContain("Assumptions:");
     });

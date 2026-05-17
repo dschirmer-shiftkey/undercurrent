@@ -7,7 +7,7 @@ import { KomatikHistoryAdapter } from "./history-adapter.js";
 import { KomatikProjectAdapter } from "./project-adapter.js";
 import { KomatikMarketplaceAdapter } from "./marketplace-adapter.js";
 import { createMockClient } from "./testing.js";
-import type { UndercurrentConfig } from "../types.js";
+import type { SlipstreamConfig } from "../types.js";
 
 const now = Date.now();
 const hoursAgo = (h: number) => new Date(now - h * 60 * 60 * 1000).toISOString();
@@ -184,7 +184,7 @@ describe("Komatik Integration — Full Pipeline", () => {
   it("enriches a vague message with full ecosystem context", async () => {
     const client = buildFullEcosystemClient();
 
-    const config: UndercurrentConfig = {
+    const config: SlipstreamConfig = {
       adapters: [
         new KomatikIdentityAdapter({ client, userId: "user-1" }),
         new KomatikHistoryAdapter({ client, userId: "user-1" }),
@@ -248,7 +248,7 @@ describe("Komatik Integration — Full Pipeline", () => {
   it("passes through high-specificity requests even with ecosystem context", async () => {
     const client = buildFullEcosystemClient();
 
-    const config: UndercurrentConfig = {
+    const config: SlipstreamConfig = {
       adapters: [
         new KomatikIdentityAdapter({ client, userId: "user-1" }),
         new KomatikHistoryAdapter({ client, userId: "user-1" }),
@@ -279,7 +279,7 @@ describe("Komatik Integration — Full Pipeline", () => {
       forge_tools: [],
     });
 
-    const config: UndercurrentConfig = {
+    const config: SlipstreamConfig = {
       adapters: [
         new KomatikIdentityAdapter({
           client: emptyClient,

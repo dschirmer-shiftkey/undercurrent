@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Undercurrent } from "../index.js";
+import { Slipstream } from "../index.js";
 import { estimateTokens } from "../engine/session-monitor.js";
 import { DefaultStrategy } from "../strategies/default.js";
 import { KomatikIdentityAdapter } from "../komatik/identity-adapter.js";
@@ -36,10 +36,10 @@ export interface McpServerConfig {
 }
 
 /**
- * Creates an MCP server that exposes Undercurrent's enrichment pipeline
+ * Creates an MCP server that exposes Slipstream's enrichment pipeline
  * and Komatik user context to external tools via the MCP protocol.
  */
-export function createUndercurrentMcpServer(config: McpServerConfig): McpServer {
+export function createSlipstreamMcpServer(config: McpServerConfig): McpServer {
   const { client, userId, writeClient, preset, governance, pilot } = config;
 
   const adapterOptions = { client, userId };
@@ -52,7 +52,7 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
   const projectAdapter = new KomatikProjectAdapter(adapterOptions);
   const marketplaceAdapter = new KomatikMarketplaceAdapter(adapterOptions);
 
-  const undercurrent = new Undercurrent({
+  const slipstream = new Slipstream({
     adapters: [
       identityAdapter,
       preferenceAdapter,
@@ -82,14 +82,14 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
       userId,
     },
   });
-  const pilotProcessor = pilot ? new KomatikPilotProcessor(undercurrent) : null;
+  const pilotProcessor = pilot ? new KomatikPilotProcessor(slipstream) : null;
 
   const server = new McpServer(
-    { name: "undercurrent", version: "1.0.0" },
+    { name: "slipstream", version: "1.0.0" },
     { capabilities: { logging: {} } },
   );
 
-  registerTools(server, undercurrent, userId, writeClient, pilotProcessor);
+  registerTools(server, slipstream, userId, writeClient, pilotProcessor);
   registerResources(
     server,
     identityAdapter,
@@ -116,7 +116,7 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
 
 function registerTools(
   server: McpServer,
-  undercurrent: Undercurrent,
+  slipstream: Slipstream,
   userId: string,
   writeClient?: KomatikWriteClient,
   pilotProcessor?: KomatikPilotProcessor | null,
@@ -126,7 +126,7 @@ function registerTools(
     {
       title: "Enrich Prompt",
       description:
-        "Context engineering pipeline: runs a message through Undercurrent's 4-stage " +
+        "Context engineering pipeline: runs a message through Slipstream's 4-stage " +
         "enrichment (classify → harvest → analyze → compose) with full Komatik user " +
         "context. Returns the enriched prompt, intent classification, assumptions made, " +
         "gaps identified, and processing metadata.",
@@ -157,7 +157,7 @@ function registerTools(
         content: t.content,
       }));
 
-      const result = await undercurrent.enrich({
+      const result = await slipstream.enrich({
         message: args.message,
         conversation,
         enrichmentContext: { source: "mcp-external" },
@@ -213,7 +213,7 @@ function registerTools(
         "without running the enrichment pipeline. Returns raw context layers.",
     },
     async () => {
-      const adapters = undercurrent.adapters;
+      const adapters = slipstream.adapters;
       const layers: ContextLayer[] = [];
 
       const dummyInput = {
@@ -302,7 +302,7 @@ function registerTools(
         content: t.content,
       }));
 
-      const result = await undercurrent.suggestFollowups({
+      const result = await slipstream.suggestFollowups({
         originalMessage: args.originalMessage,
         agentResponse: args.agentResponse,
         conversation,
@@ -340,7 +340,7 @@ function registerTools(
       },
     },
     async (args) => {
-      await undercurrent.recordSuggestionFeedback({
+      await slipstream.recordSuggestionFeedback({
         suggestionId: args.suggestionId,
         outcome: args.outcome,
         editedPromptText: args.editedPromptText,
@@ -358,7 +358,7 @@ function registerTools(
     {
       title: "Process Message with Pilot Telemetry",
       description:
-        "Runs full Undercurrent.process() (enrich + model router + caller) and emits " +
+        "Runs full Slipstream.process() (enrich + model router + caller) and emits " +
         "request-level ROI telemetry for production pilot rollouts.",
       inputSchema: {
         message: z.string().describe("The raw user message to process"),
@@ -392,7 +392,7 @@ function registerTools(
         return mcpResult({
           ok: false,
           error:
-            "pilot_not_configured: createUndercurrentMcpServer requires config.pilot.caller for process_with_pilot.",
+            "pilot_not_configured: createSlipstreamMcpServer requires config.pilot.caller for process_with_pilot.",
         });
       }
 
@@ -449,7 +449,7 @@ function registerTools(
         return mcpResult({
           ok: false,
           error:
-            "pilot_not_configured: createUndercurrentMcpServer requires config.pilot.caller for record_pilot_outcome.",
+            "pilot_not_configured: createSlipstreamMcpServer requires config.pilot.caller for record_pilot_outcome.",
         });
       }
       await pilotProcessor.recordOutcome({
@@ -473,7 +473,7 @@ function registerTools(
         return mcpResult({
           ok: false,
           error:
-            "pilot_not_configured: createUndercurrentMcpServer requires config.pilot.caller for get_pilot_roi_summary.",
+            "pilot_not_configured: createSlipstreamMcpServer requires config.pilot.caller for get_pilot_roi_summary.",
         });
       }
       return mcpResult({

@@ -293,14 +293,14 @@ describe("KomatikPilotProcessor with OutcomeWriter", () => {
   });
 });
 
-describe("Undercurrent.enrich() outcome persistence", () => {
+describe("Slipstream.enrich() outcome persistence", () => {
   it("auto-persists enrichment record when outcomeWriter is configured", async () => {
-    const { Undercurrent } = await import("../index.js");
+    const { Slipstream } = await import("../index.js");
     const { DefaultStrategy } = await import("../strategies/default.js");
     const { client, writes } = createMockWriteClient({ enrichment_outcomes: [] });
     const writer = new KomatikOutcomeWriter(client, "user-99");
 
-    const uc = new Undercurrent({
+    const uc = new Slipstream({
       adapters: [],
       strategy: new DefaultStrategy(),
       outcomeWriter: { writer, sessionId: "sess-x", workspaceId: "ws-1" },
@@ -317,10 +317,10 @@ describe("Undercurrent.enrich() outcome persistence", () => {
   });
 
   it("does not persist when outcomeWriter is not configured", async () => {
-    const { Undercurrent } = await import("../index.js");
+    const { Slipstream } = await import("../index.js");
     const { DefaultStrategy } = await import("../strategies/default.js");
 
-    const uc = new Undercurrent({
+    const uc = new Slipstream({
       adapters: [],
       strategy: new DefaultStrategy(),
     });
@@ -330,12 +330,12 @@ describe("Undercurrent.enrich() outcome persistence", () => {
   });
 
   it("recordVerdict updates the outcome row", async () => {
-    const { Undercurrent } = await import("../index.js");
+    const { Slipstream } = await import("../index.js");
     const { DefaultStrategy } = await import("../strategies/default.js");
     const { client, writes } = createMockWriteClient({ enrichment_outcomes: [] });
     const writer = new KomatikOutcomeWriter(client, "user-99");
 
-    const uc = new Undercurrent({
+    const uc = new Slipstream({
       adapters: [],
       strategy: new DefaultStrategy(),
       outcomeWriter: { writer },
@@ -355,7 +355,7 @@ describe("Undercurrent.enrich() outcome persistence", () => {
   });
 
   it("enrichment succeeds even if outcome write fails", async () => {
-    const { Undercurrent } = await import("../index.js");
+    const { Slipstream } = await import("../index.js");
     const { DefaultStrategy } = await import("../strategies/default.js");
     const { client } = createMockWriteClient({ enrichment_outcomes: [] });
 
@@ -370,7 +370,7 @@ describe("Undercurrent.enrich() outcome persistence", () => {
     };
 
     const writer = new KomatikOutcomeWriter(client, "user-99");
-    const uc = new Undercurrent({
+    const uc = new Slipstream({
       adapters: [],
       strategy: new DefaultStrategy(),
       outcomeWriter: { writer },

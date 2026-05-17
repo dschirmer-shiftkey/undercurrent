@@ -49,7 +49,7 @@
     }
   },
   "bin": {
-    "undercurrent-mcp": "dist/mcp/index.js"
+    "slipstream-mcp": "dist/mcp/index.js"
   },
   "publishConfig": {
     "access": "public"

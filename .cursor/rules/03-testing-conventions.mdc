@@ -1,5 +1,5 @@
 ---
-description: Testing conventions for Undercurrent
+description: Testing conventions for Slipstream
 globs: "**/*.test.ts"
 alwaysApply: false
 ---
@@ -34,7 +34,7 @@ function stubAdapter(
 ### Config factory
 
 ```typescript
-function makeConfig(overrides: Partial<UndercurrentConfig> = {}): UndercurrentConfig {
+function makeConfig(overrides: Partial<SlipstreamConfig> = {}): SlipstreamConfig {
   return {
     adapters: [],
     strategy: new DefaultStrategy(),

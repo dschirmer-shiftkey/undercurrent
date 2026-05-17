@@ -16,7 +16,7 @@ export interface MiddlewareRequest {
     message?: string;
     conversation?: ConversationTurn[];
   };
-  undercurrent?: EnrichedPrompt;
+  slipstream?: EnrichedPrompt;
 }
 
 export interface MiddlewareOptions {
@@ -32,7 +32,7 @@ export interface MiddlewareOptions {
  * app.use(createMiddleware(pipeline));
  *
  * app.post('/chat', (req, res) => {
- *   const enriched = req.undercurrent; // EnrichedPrompt
+ *   const enriched = req.slipstream; // EnrichedPrompt
  *   // send enriched.enrichedMessage to your LLM
  * });
  * ```
@@ -54,7 +54,7 @@ export function createMiddleware(pipeline: Pipeline, options?: MiddlewareOptions
   const attachResult =
     options?.attachResult ??
     ((req: unknown, result: EnrichedPrompt) => {
-      (req as MiddlewareRequest).undercurrent = result;
+      (req as MiddlewareRequest).slipstream = result;
     });
 
   return async (req: unknown, _res: unknown, next: (err?: unknown) => void) => {
