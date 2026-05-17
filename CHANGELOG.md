@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2026-05-16
+
+### Added
+
+- Closed enrichment feedback loop persistence:
+  - `KomatikOutcomeWriter` for writing `enrichment_outcomes` telemetry rows and verdict updates
+  - `Undercurrent.recordVerdict()` API for linking user feedback to `metadata.enrichmentId`
+  - `OutcomeWriter`/`OutcomeWriterConfig` protocol types
+- `EnrichmentMetadata.enrichmentId` on every enrichment result for stable verdict linkage.
+- Safety-first preflight interception layer:
+  - `src/engine/preflight.ts` with typo correction, continuation normalization, cascade-risk scoring, and contradiction detection
+  - `PreflightResult`, `Correction`, `CascadeRisk`, `PreflightPolicy` types
+  - New governance preset: `safety-first`
+- Replay harness metrics for preflight behavior:
+  - `preflightCorrectionsTotal`
+  - `blockingClarificationsTotal`
+  - `cascadeRiskDistribution`
+  - `--preset` support in replay runs
+- New MCP capabilities:
+  - `suggest_followups`
+  - `record_suggestion_feedback`
+  - `process_with_pilot`
+  - `record_pilot_outcome`
+  - `get_pilot_roi_summary`
+  - `digest_tool_result`
+
+### Changed
+
+- Pipeline now supports optional pre-classification interception under `safety-first`.
+- Gap resolution is stricter under high cascade risk, biasing toward clarifications over assumptions.
+- MCP `preset` enum now includes `safety-first`.
+
+### Security
+
+- Replaced regex-based preflight token/whitespace trimming with linear character scanning to resolve CodeQL polynomial ReDoS findings (`js/polynomial-redos`).
+
 ## [0.4.0] - 2026-04-25
 
 ### Added

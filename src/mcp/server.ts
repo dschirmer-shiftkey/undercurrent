@@ -85,7 +85,7 @@ export function createUndercurrentMcpServer(config: McpServerConfig): McpServer 
   const pilotProcessor = pilot ? new KomatikPilotProcessor(undercurrent) : null;
 
   const server = new McpServer(
-    { name: "undercurrent", version: "0.4.0" },
+    { name: "undercurrent", version: "1.0.0" },
     { capabilities: { logging: {} } },
   );
 
