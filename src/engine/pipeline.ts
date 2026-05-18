@@ -238,7 +238,8 @@ export class Pipeline {
    */
   recordTierOutcome(input: {
     tier: import("../types.js").CostTier;
-    accepted: boolean;
+    reaction?: import("./tier-bias-learner.js").Reaction;
+    accepted?: boolean;
     userId?: string;
     domain?: string;
   }): void {
