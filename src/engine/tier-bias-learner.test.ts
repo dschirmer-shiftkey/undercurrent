@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { SessionTierBiasLearner } from "./tier-bias-learner.js";
+import {
+  REACTION_WEIGHTS,
+  SessionTierBiasLearner,
+  resolveOutcomeWeight,
+} from "./tier-bias-learner.js";
 import { recommendTier } from "./pipeline.js";
 import type { IntentSignal, TierRecommendation } from "../types.js";
 
@@ -156,6 +160,78 @@ describe("SessionTierBiasLearner — getStats", () => {
     expect(stats.rates.premium).toBe(1);
     expect(stats.rates.balanced).toBe(0);
     expect(stats.total).toBe(4);
+  });
+});
+
+describe("SessionTierBiasLearner — graded reactions (v2.5)", () => {
+  it("REACTION_WEIGHTS preserves binary semantics at the endpoints", () => {
+    expect(REACTION_WEIGHTS.perfect).toBe(1.0);
+    expect(REACTION_WEIGHTS.bad).toBe(0.0);
+    expect(REACTION_WEIGHTS.okay).toBeGreaterThan(0.5);
+    expect(REACTION_WEIGHTS.okay).toBeLessThan(1.0);
+    expect(REACTION_WEIGHTS.confusing).toBeGreaterThan(0.0);
+    expect(REACTION_WEIGHTS.confusing).toBeLessThan(0.5);
+  });
+
+  it("resolveOutcomeWeight prefers reaction over accepted when both are present", () => {
+    expect(resolveOutcomeWeight({ tier: "balanced", reaction: "perfect", accepted: false })).toBe(1.0);
+    expect(resolveOutcomeWeight({ tier: "balanced", reaction: "bad", accepted: true })).toBe(0.0);
+  });
+
+  it("resolveOutcomeWeight returns null when neither reaction nor accepted is set", () => {
+    expect(resolveOutcomeWeight({ tier: "balanced" })).toBeNull();
+  });
+
+  it("silently drops outcomes that have neither reaction nor accepted", () => {
+    const learner = new SessionTierBiasLearner();
+    learner.recordOutcome({ tier: "balanced", userId: "u-1" });
+    expect(learner.getStats({ userId: "u-1" }).total).toBe(0);
+  });
+
+  it("`perfect` reaction behaves identically to accepted=true for binary stats", () => {
+    const a = new SessionTierBiasLearner({ warmThreshold: 5 });
+    const b = new SessionTierBiasLearner({ warmThreshold: 5 });
+    for (let i = 0; i < 5; i++) a.recordOutcome({ tier: "balanced", reaction: "perfect", userId: "u-1" });
+    for (let i = 0; i < 5; i++) b.recordOutcome({ tier: "balanced", accepted: true, userId: "u-1" });
+    const base = baseRecommendation();
+    expect(a.adjust(base, { userId: "u-1" })).toEqual(b.adjust(base, { userId: "u-1" }));
+  });
+
+  it("mix of `okay` reactions yields a fractional acceptance rate (not 0 or 1)", () => {
+    const learner = new SessionTierBiasLearner({ warmThreshold: 5 });
+    for (let i = 0; i < 5; i++) learner.recordOutcome({ tier: "balanced", reaction: "okay", userId: "u-1" });
+    const stats = learner.getStats({ userId: "u-1" });
+    expect(stats.rates.balanced).toBeCloseTo(REACTION_WEIGHTS.okay, 5);
+    expect(stats.rates.balanced).not.toBe(1.0);
+    expect(stats.rates.balanced).not.toBe(0.0);
+  });
+
+  it("five `confusing` reactions trigger a flip when an alternative has high acceptance", () => {
+    const learner = new SessionTierBiasLearner({
+      warmThreshold: 5,
+      lowAcceptanceThreshold: 0.4,
+      highAcceptanceThreshold: 0.7,
+    });
+    // Balanced gets all "confusing" → rate ≈ 0.33 < 0.4 (low)
+    for (let i = 0; i < 5; i++) learner.recordOutcome({ tier: "balanced", reaction: "confusing", userId: "u-1" });
+    // Premium gets all "perfect" → rate = 1.0 > 0.7 (high)
+    for (let i = 0; i < 5; i++) learner.recordOutcome({ tier: "premium", reaction: "perfect", userId: "u-1" });
+
+    const base = baseRecommendation();
+    const adjusted = learner.adjust(base, { userId: "u-1" });
+    expect(adjusted.tier).toBe("premium");
+    expect(adjusted.biasAdjustment!.appliedReason).toBe("low-acceptance-flip");
+  });
+
+  it("mixed reactions average correctly: 1*perfect + 1*okay + 1*confusing + 1*bad + 1*perfect", () => {
+    const learner = new SessionTierBiasLearner({ warmThreshold: 5 });
+    learner.recordOutcome({ tier: "balanced", reaction: "perfect", userId: "u-1" });
+    learner.recordOutcome({ tier: "balanced", reaction: "okay", userId: "u-1" });
+    learner.recordOutcome({ tier: "balanced", reaction: "confusing", userId: "u-1" });
+    learner.recordOutcome({ tier: "balanced", reaction: "bad", userId: "u-1" });
+    learner.recordOutcome({ tier: "balanced", reaction: "perfect", userId: "u-1" });
+    const expected = (1.0 + REACTION_WEIGHTS.okay + REACTION_WEIGHTS.confusing + 0.0 + 1.0) / 5;
+    expect(learner.getStats({ userId: "u-1" }).rates.balanced).toBeCloseTo(expected, 5);
   });
 });
 
