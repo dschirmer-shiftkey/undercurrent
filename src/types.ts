@@ -493,9 +493,19 @@ export interface SlipstreamConfig {
 
 // Forward declaration so SlipstreamConfig can reference the learner type
 // without pulling the implementation into this file.
+//
+// v2.5 widened `recordOutcome` to accept graded `reaction` feedback. Either
+// `reaction` or `accepted` must be present — see `TierOutcomeInput` in
+// `engine/tier-bias-learner.ts` for the canonical shape.
 export interface TierBiasLearnerInterface {
   adjust(base: TierRecommendation, ctx: { userId?: string; domain?: string }): TierRecommendation;
-  recordOutcome(input: { tier: CostTier; accepted: boolean; userId?: string; domain?: string }): void;
+  recordOutcome(input: {
+    tier: CostTier;
+    reaction?: "perfect" | "okay" | "confusing" | "bad";
+    accepted?: boolean;
+    userId?: string;
+    domain?: string;
+  }): void;
   getStats(ctx?: { userId?: string; domain?: string }): unknown;
 }
 

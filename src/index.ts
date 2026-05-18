@@ -216,7 +216,10 @@ export class Slipstream {
    */
   recordTierOutcome(input: {
     tier: import("./types.js").CostTier;
-    accepted: boolean;
+    /** Graded user feedback. Preferred over `accepted`. */
+    reaction?: import("./engine/tier-bias-learner.js").Reaction;
+    /** Binary acceptance — back-compat. Either `reaction` or `accepted` must be present. */
+    accepted?: boolean;
     userId?: string;
     domain?: string;
   }): void {
@@ -226,13 +229,14 @@ export class Slipstream {
 
 export { Pipeline, recommendTier } from "./engine/pipeline.js";
 export { buildEnrichSpan, buildProcessSpan, safelyEmit } from "./engine/telemetry.js";
-export { SessionTierBiasLearner } from "./engine/tier-bias-learner.js";
+export { SessionTierBiasLearner, REACTION_WEIGHTS, resolveOutcomeWeight } from "./engine/tier-bias-learner.js";
 export type {
   TierBiasLearner,
   TierBiasContext,
   TierOutcomeInput,
   TierBiasStats,
   SessionTierBiasLearnerOptions,
+  Reaction,
 } from "./engine/tier-bias-learner.js";
 export type { EnrichInput } from "./engine/pipeline.js";
 export { SessionMonitor, estimateTokens } from "./engine/session-monitor.js";

@@ -29,14 +29,60 @@ export interface TierBiasContext {
   domain?: string;
 }
 
+/**
+ * Graded user feedback. Richer than binary `accepted` because it captures the
+ * difference between "good but not great" and "perfect" (both useful positive
+ * signal but with different conviction) and between "confusing" and "bad"
+ * (confusing often means the tier was too low; bad often means it produced
+ * wrong output regardless of tier).
+ *
+ * Internally translated to a weight in [0, 1] — see `REACTION_WEIGHTS`.
+ */
+export type Reaction = "perfect" | "okay" | "confusing" | "bad";
+
+/**
+ * Map of reactions to acceptance weights in [0, 1]. The learner's "acceptance
+ * rate" is the weighted mean of these scores. Chosen so that:
+ *   - "perfect" and "bad" preserve binary semantics (1 / 0)
+ *   - "okay" leans positive but doesn't pull the rate as hard as "perfect"
+ *   - "confusing" leans negative but leaves room for the host to use it as a
+ *     signal to escalate the tier rather than punish it equally to "bad"
+ */
+export const REACTION_WEIGHTS: Readonly<Record<Reaction, number>> = Object.freeze({
+  perfect: 1.0,
+  okay: 0.67,
+  confusing: 0.33,
+  bad: 0.0,
+});
+
 export interface TierOutcomeInput {
   /** The tier that was actually used for this request (may differ from the recommended one). */
   tier: CostTier;
-  /** Whether the user accepted the result. */
-  accepted: boolean;
+  /**
+   * Graded user feedback. Preferred over `accepted` — carries strictly more
+   * signal. When both are present, `reaction` wins.
+   */
+  reaction?: Reaction;
+  /**
+   * Binary acceptance — back-compat. Equivalent to `reaction: "perfect"` when
+   * true and `reaction: "bad"` when false. Either `reaction` or `accepted`
+   * must be present.
+   */
+  accepted?: boolean;
   /** Optional scoping — when present, the learner can keep per-user / per-domain stats. */
   userId?: string;
   domain?: string;
+}
+
+/**
+ * Resolve a `TierOutcomeInput` to its acceptance weight in [0, 1]. Returns
+ * null when neither `reaction` nor `accepted` is set (caller should drop the
+ * outcome silently rather than guess).
+ */
+export function resolveOutcomeWeight(input: TierOutcomeInput): number | null {
+  if (input.reaction !== undefined) return REACTION_WEIGHTS[input.reaction];
+  if (input.accepted !== undefined) return input.accepted ? 1.0 : 0.0;
+  return null;
 }
 
 export interface TierBiasStats {
@@ -127,9 +173,11 @@ export class SessionTierBiasLearner implements TierBiasLearner {
   }
 
   recordOutcome(input: TierOutcomeInput): void {
+    const weight = resolveOutcomeWeight(input);
+    if (weight === null) return;
     const counts = this.getOrCreateCounts(this.scopeKey(input));
     counts[input.tier].total++;
-    if (input.accepted) counts[input.tier].accepted++;
+    counts[input.tier].accepted += weight;
   }
 
   adjust(base: TierRecommendation, ctx: TierBiasContext): TierRecommendation {

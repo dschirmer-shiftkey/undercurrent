@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.0] - 2026-05-17
+
+### Added — Graded reactions for `TierBiasLearner`
+
+- **`Reaction`** type — `"perfect" | "okay" | "confusing" | "bad"`. A 4-level scale carrying strictly more signal than binary `accepted`.
+- **`REACTION_WEIGHTS`** — exported readonly map: `perfect=1.0`, `okay=0.67`, `confusing=0.33`, `bad=0.0`. Endpoints preserve binary semantics so `reaction: "perfect"` is identical to `accepted: true` and `reaction: "bad"` is identical to `accepted: false`.
+- **`TierOutcomeInput`** widened: `accepted` is now optional; new optional `reaction` field. When both are present, `reaction` wins. When neither is present, the outcome is silently dropped.
+- **`resolveOutcomeWeight(input)`** exported helper — pure function mapping a `TierOutcomeInput` to its weight in `[0, 1]` or `null`.
+- **`SessionTierBiasLearner.recordOutcome`** now accumulates fractional weights, so the "acceptance rate" used by the flip/penalty/boost policy is a weighted mean. Existing thresholds (`lowAcceptanceThreshold: 0.30`, `highAcceptanceThreshold: 0.70`) still apply unchanged.
+- **`Slipstream.recordTierOutcome`** + `Pipeline.recordTierOutcome` widened to accept `reaction` or `accepted`. Existing call sites that pass `accepted` keep working byte-for-byte.
+
+### Why
+
+Binary thumbs lose the distinction between "good but not great" and "perfect" (both positive but with different conviction) and between "confusing" and "bad" (confusing often means the tier was too low, while bad means the output was wrong regardless of tier). Hosts that surface a graded reaction UI — for example a 4-emoji reaction strip on each assistant message — can now feed that richer signal directly to the learner without an external aggregation layer.
+
+### Back-compat
+
+- All v2.3+ code that calls `recordTierOutcome({ tier, accepted })` works unchanged.
+- `TierBiasStats.counts[tier].accepted` may now be fractional. Hosts that displayed it as a count should render it as a rate (`accepted / total`) — the same number for binary input, a weighted score for reaction input.
+
 ## [2.4.0] - 2026-05-17
 
 ### Added — OpenTelemetry-GenAI telemetry emitter
